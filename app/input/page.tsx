@@ -60,7 +60,6 @@ export default function InputPage() {
     <div className="min-h-screen bg-gray-100 dark:bg-black flex items-center justify-center sm:p-4 transition-colors duration-300">
       <div className="w-full max-w-[400px] sm:aspect-[9/16] bg-white dark:bg-zinc-900 relative flex flex-col shadow-2xl sm:rounded-[3rem] overflow-hidden h-screen sm:h-auto border-[6px] border-white dark:border-zinc-800 transition-colors duration-300">
         
-        {/* 상단 헤더: 타이틀에 골드 그라데이션 적용, 지우기 버튼 세련되게 다듬기 */}
         <div className="pt-6 pb-4 px-4 flex justify-between items-center shrink-0">
           <h1 className="text-lg font-black bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent tracking-tight">
             당첨 번호 입력 스튜디오
@@ -75,7 +74,6 @@ export default function InputPage() {
 
         <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] flex flex-col items-center w-full">
           
-          {/* 브러시/지우개 도구 모음: 다크 모드 호환 */}
           <div className="w-[90%] bg-gray-50 dark:bg-zinc-800/80 rounded-2xl p-3 mb-6 border border-gray-200 dark:border-zinc-700/50 shadow-sm shrink-0 transition-colors duration-300">
             <div className="flex justify-center gap-2">
               <button
@@ -102,9 +100,9 @@ export default function InputPage() {
             </div>
           </div>
 
-          {/* 메인 입력 그리드: 테두리 및 포커스 링(골드) 색상 변경 */}
           <div className="w-full px-4 mb-6 shrink-0">
-            <div className="grid grid-cols-6 border-l border-t border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm w-full transition-colors duration-300">
+            {/* 메인 표 윤곽선을 dark:border-zinc-500으로 변경하여 다크모드 시인성 확보 */}
+            <div className="grid grid-cols-6 border-l border-t border-gray-300 dark:border-zinc-500 bg-white dark:bg-zinc-900 shadow-sm w-full transition-colors duration-300">
               {activeBoard.map((cell, cellIdx) => {
                 const isFocused = focusedCell?.boardIdx === activeBoardIdx && focusedCell?.cellIdx === cellIdx;
                 return (
@@ -112,7 +110,7 @@ export default function InputPage() {
                     key={cellIdx}
                     onClick={() => handleCellClick(cellIdx)}
                     className={`
-                      aspect-square border-r border-b border-gray-300 dark:border-zinc-700 flex items-center justify-center font-bold text-xl cursor-pointer transition-colors duration-200
+                      aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold text-xl cursor-pointer transition-colors duration-200
                       ${cell.color ? cell.color : 'bg-white dark:bg-zinc-900'} 
                       ${cell.color ? 'text-gray-900' : 'text-gray-900 dark:text-white'}
                       ${isFocused ? 'ring-inset ring-[3px] ring-amber-500 z-10' : ''}
@@ -125,7 +123,6 @@ export default function InputPage() {
             </div>
           </div>
 
-          {/* 페이지네이션: 다크 모드 호환 및 앰버 색상 적용 */}
           <div className="flex items-center justify-center w-full max-w-[200px] mb-8 bg-white dark:bg-zinc-800 rounded-full shadow-sm border border-gray-200 dark:border-zinc-700 p-1 shrink-0 transition-colors duration-300">
             <button 
               onClick={handlePrevBoard}
@@ -148,7 +145,6 @@ export default function InputPage() {
 
         </div>
 
-        {/* 하단 네비게이션: 블랙 & 골드 테마에 맞춘 프리미엄 디자인 */}
         <div className="w-full bg-white dark:bg-zinc-900 border-t border-gray-100 dark:border-zinc-800 flex justify-around items-center pt-3 pb-5 sm:pb-6 z-40 shrink-0 shadow-[0_-4px_15px_-3px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_15px_-3px_rgba(0,0,0,0.3)] transition-colors duration-300">
           <Link href="/" className="flex flex-col items-center text-gray-500 dark:text-zinc-400 w-16 gap-1.5 group">
             <div className="bg-gray-100 dark:bg-black group-hover:text-amber-500 p-2 rounded-xl w-full flex justify-center shadow-sm transition-all duration-300 group-active:scale-95">
@@ -170,7 +166,6 @@ export default function InputPage() {
           </button>
         </div>
 
-        {/* 숫자 입력 모달: 다크 모드 및 골드 터치 효과 적용 */}
         {isNumberModalOpen && (
           <div className="absolute inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-[340px] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
@@ -185,19 +180,20 @@ export default function InputPage() {
               </div>
               
               <div className="p-4 bg-gray-100 dark:bg-zinc-950">
-                <div className="grid grid-cols-6 border-l border-t border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+                {/* 팝업 모달창의 표 윤곽선도 dark:border-zinc-500으로 변경 */}
+                <div className="grid grid-cols-6 border-l border-t border-gray-300 dark:border-zinc-500 bg-white dark:bg-zinc-900">
                   {numbers1to45.map(num => (
                     <div
                       key={num}
                       onClick={() => handleNumberSelect(num)}
-                      className="aspect-square border-r border-b border-gray-300 dark:border-zinc-700 flex items-center justify-center font-bold text-lg text-gray-900 dark:text-white cursor-pointer hover:bg-amber-500/10 dark:hover:bg-amber-500/20 active:bg-amber-500/30 dark:active:bg-amber-500/40 transition-colors"
+                      className="aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold text-lg text-gray-900 dark:text-white cursor-pointer hover:bg-amber-500/10 dark:hover:bg-amber-500/20 active:bg-amber-500/30 dark:active:bg-amber-500/40 transition-colors"
                     >
                       {num}
                     </div>
                   ))}
-                  <div className="aspect-square border-r border-b border-gray-300 dark:border-zinc-700 bg-gray-100 dark:bg-zinc-800/50"></div>
-                  <div className="aspect-square border-r border-b border-gray-300 dark:border-zinc-700 bg-gray-100 dark:bg-zinc-800/50"></div>
-                  <div className="aspect-square border-r border-b border-gray-300 dark:border-zinc-700 bg-gray-100 dark:bg-zinc-800/50"></div>
+                  <div className="aspect-square border-r border-b border-gray-300 dark:border-zinc-500 bg-gray-100 dark:bg-zinc-800/50"></div>
+                  <div className="aspect-square border-r border-b border-gray-300 dark:border-zinc-500 bg-gray-100 dark:bg-zinc-800/50"></div>
+                  <div className="aspect-square border-r border-b border-gray-300 dark:border-zinc-500 bg-gray-100 dark:bg-zinc-800/50"></div>
                 </div>
               </div>
             </div>
