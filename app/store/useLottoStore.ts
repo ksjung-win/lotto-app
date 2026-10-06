@@ -13,10 +13,11 @@ interface LottoStore {
   setCellColor: (boardIdx: number, cellIdx: number, color: string | null) => void;
   setCellNumber: (num: number) => void;
   resetBoards: () => void;
-  resetBoard: (boardIdx: number) => void; // 현재 표 1개만 초기화하는 기능 추가
+  resetBoard: (boardIdx: number) => void;
 }
 
-const initialBoards = Array.from({ length: 50 }, () =>
+// 1. 표의 개수를 50개에서 200개로 대폭 확장
+const initialBoards = Array.from({ length: 200 }, () =>
   Array.from({ length: 30 }, () => ({ number: null, color: null }))
 );
 
@@ -54,7 +55,6 @@ export const useLottoStore = create<LottoStore>()(
 
       resetBoards: () => set({ boards: initialBoards, focusedCell: null }),
       
-      // 현재 표 1개만 비워주는 기능 구현
       resetBoard: (boardIdx) => set((state) => {
         const newBoards = [...state.boards];
         newBoards[boardIdx] = Array.from({ length: 30 }, () => ({ number: null, color: null }));
@@ -63,6 +63,17 @@ export const useLottoStore = create<LottoStore>()(
     }),
     {
       name: 'lotto-storage',
+      // 2. 마이그레이션 안전장치: 기존 사용자의 50개 데이터를 유지하면서 200개로 자연스럽게 병합
+      merge: (persistedState: any, currentState) => {
+        if (persistedState?.boards) {
+          const mergedBoards = [...currentState.boards];
+          persistedState.boards.forEach((board: any, index: number) => {
+            if (index < 200) mergedBoards[index] = board;
+          });
+          return { ...currentState, ...persistedState, boards: mergedBoards };
+        }
+        return { ...currentState, ...persistedState };
+      }
     }
   )
 );
