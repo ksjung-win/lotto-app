@@ -1,0 +1,16 @@
+{
+  "name": "로또 당첨 번호 조회",
+  "short_name": "로또앱",
+  "description": "1회차부터 최신 회차까지 실시간으로 조회하는 로또 모바일 앱",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#f59e0b",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

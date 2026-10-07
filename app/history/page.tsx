@@ -18,13 +18,23 @@ export default function HistoryPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 📁 public/data/lotto-history.json 파일에서 실제 데이터 불러오기
+  // 💡 [핵심 변경 포인트] 외부 오픈소스 DB에서 실시간으로 1회차~최신회차 데이터 자동 연동
   useEffect(() => {
-    fetch('/data/lotto-history.json')
+    fetch('https://smok95.github.io/lotto/results/all.json')
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
-          setHistoryList(data);
+          // 최신 회차가 맨 위에 오도록 내림차순 정렬
+          const sorted = data.sort((a, b) => b.draw_no - a.draw_no); // 오픈소스 DB 원본 키값(draw_no) 대응
+          
+          const formattedData = sorted.map((draw) => ({
+            drawNo: draw.draw_no,
+            date: draw.date ? draw.date : '알수없음', // 오픈소스 DB는 날짜 꼬리표가 없으므로 그대로 사용
+            numbers: [draw.numbers[0], draw.numbers[1], draw.numbers[2], draw.numbers[3], draw.numbers[4], draw.numbers[5]],
+            bonus: draw.bonus_no
+          }));
+
+          setHistoryList(formattedData);
         }
       })
       .catch((err) => console.error('데이터를 불러오지 못했습니다:', err));
@@ -32,21 +42,18 @@ export default function HistoryPage() {
 
   const currentDraw = historyList.length > 0 ? historyList[currentIndex] : null;
 
-  // 이전 회차 보기 (더 과거로 이동)
   const handlePrev = () => {
     if (currentIndex < historyList.length - 1) {
       setCurrentIndex(currentIndex + 1);
     }
   };
 
-  // 다음 회차 보기 (더 최신으로 이동)
   const handleNext = () => {
     if (currentIndex > 0) {
       setCurrentIndex(currentIndex - 1);
     }
   };
 
-  // 회차 검색 및 이동 핸들러
   const handleSearch = () => {
     const targetNo = parseInt(searchQuery, 10);
     const foundIndex = historyList.findIndex((item) => item.drawNo === targetNo);
@@ -54,7 +61,8 @@ export default function HistoryPage() {
       setCurrentIndex(foundIndex);
       setSearchQuery('');
     } else {
-      alert('해당 회차 데이터가 존재하지 않습니다. (1~1140)');
+      const latestNo = historyList.length > 0 ? historyList[0].drawNo : 1244;
+      alert(`해당 회차 데이터가 존재하지 않습니다. (1~${latestNo}회 중에서 입력해주세요)`);
     }
   };
 
@@ -73,7 +81,7 @@ export default function HistoryPage() {
         </div>
 
         {/* 메인 당첨 번호 볼 영역 */}
-        <div className="w-full px-4 mb-6 shrink-0 flex items-center justify-center gap-1.5 sm:gap-2">
+        <div className="w-full px-4 mb-8 shrink-0 flex items-center justify-center gap-1.5 sm:gap-2">
           {currentDraw ? (
             <>
               {currentDraw.numbers.map((num: number, idx: number) => (
@@ -96,19 +104,6 @@ export default function HistoryPage() {
           ) : (
             <p className="text-sm text-gray-400">데이터를 로드하는 중입니다...</p>
           )}
-        </div>
-
-        {/* 당첨금 상세 정보 카드 */}
-        <div className="w-full px-5 mb-6 shrink-0">
-          <div className="bg-gray-50 dark:bg-zinc-800/80 rounded-2xl p-4 border border-gray-200 dark:border-zinc-700/50 shadow-sm flex flex-col items-center justify-center gap-2 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-20 h-20 bg-amber-500/5 rounded-full blur-2xl -mr-10 -mt-10"></div>
-            <p className="text-sm text-gray-500 dark:text-zinc-400 font-medium">
-              1등 당첨 정보 (총 {currentDraw ? currentDraw.winners : 0}명)
-            </p>
-            <p className="text-2xl font-black text-gray-900 dark:text-zinc-100 tracking-tight">
-              {currentDraw ? currentDraw.prizePerWinner : '0'} <span className="text-base font-bold text-amber-500">원</span>
-            </p>
-          </div>
         </div>
 
         {/* 회차 검색 및 이동 컨트롤러 */}
