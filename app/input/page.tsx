@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Home, Search, Settings, ChevronLeft, ChevronRight, X, Eraser, MousePointer2 } from 'lucide-react';
+import { Home, Search, Settings, ChevronLeft, ChevronRight, X, Eraser, MousePointer2, Layers } from 'lucide-react';
 import { useLottoStore } from '../store/useLottoStore';
 
 export default function InputPage() {
@@ -16,6 +16,10 @@ export default function InputPage() {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  const [isMatchModalOpen, setIsMatchModalOpen] = useState(false);
+  const [matchedBoards, setMatchedBoards] = useState<number[]>([]);
+  const [matchPageIndex, setMatchPageIndex] = useState(0);
+
   const numbers1to45 = Array.from({ length: 45 }, (_, i) => i + 1);
   
   const colors = [
@@ -28,18 +32,50 @@ export default function InputPage() {
     { id: 'navy', value: 'bg-[#1E3A8A]' },
   ];
 
-  // 클릭 로직 명확히 분리
+  const getMatchedBoardsForCurrentBoard = () => {
+    const currentBoardData = boards[activeBoardIdx] || [];
+    const endDigitCounts = new Array(10).fill(0);
+    
+    currentBoardData.forEach(c => {
+      if (c && c.number !== null) {
+        endDigitCounts[c.number % 10]++;
+      }
+    });
+
+    const targetDigit = endDigitCounts.findIndex(count => count >= 3);
+    if (targetDigit === -1) return [];
+
+    const matches: number[] = [];
+    for (let idx = 0; idx < 200; idx++) {
+      if (idx === activeBoardIdx) continue;
+      const boardToScan = boards[idx];
+      if (!boardToScan) continue;
+      
+      let count = 0;
+      boardToScan.forEach(c => {
+        if (c && c.number !== null && (c.number % 10) === targetDigit) {
+          count++;
+        }
+      });
+      
+      if (count >= 3) {
+        matches.push(idx);
+      }
+    }
+    return matches;
+  };
+
+  const currentMatched = getMatchedBoardsForCurrentBoard();
+  const hasPattern = currentMatched.length > 0;
+
   const handleCellClick = (cellIdx: number) => {
     if (selectedBrush === null) {
-      // 1. 포인터(숫자 입력) 모드: 번호 모달창만 띄움
       setPendingCell({ boardIdx: activeBoardIdx, cellIdx });
       setFocusedCell(activeBoardIdx, cellIdx);
       setIsNumberModalOpen(true);
     } else if (selectedBrush === 'eraser') {
-      // 2. 지우개 모드: 모달창 없이 색상만 지움
       setCellColor(activeBoardIdx, cellIdx, null);
     } else {
-      // 3. 색상 브러시 모드: 모달창 없이 색상만 칠함
       setCellColor(activeBoardIdx, cellIdx, selectedBrush);
     }
   };
@@ -47,8 +83,19 @@ export default function InputPage() {
   const handleNumberSelect = (num: number | null) => {
     if (num !== null) {
       setCellNumber(num);
+      setTimeout(() => {
+        const matches = getMatchedBoardsForCurrentBoard();
+        if (matches.length > 0) {
+          setMatchedBoards(matches);
+          setMatchPageIndex(0);
+          setIsMatchModalOpen(true);
+        } else {
+          setIsMatchModalOpen(false);
+        }
+      }, 50);
     } else {
       setCellNumber(0);
+      setIsMatchModalOpen(false);
     }
     setIsNumberModalOpen(false);
     setPendingCell(null);
@@ -56,13 +103,20 @@ export default function InputPage() {
   };
 
   const handleReset = () => {
-    if (window.confirm(`${activeBoardIdx + 1}번 표의 입력 내용을 모두 지우시겠습니까?`)) {
+    if (window.confirm(`${activeBoardIdx + 1}번 표의 입력 내용을 지우시겠습니까?`)) {
       resetBoard(activeBoardIdx);
+      setIsMatchModalOpen(false);
     }
   };
 
-  const handlePrevBoard = () => setActiveBoardIdx(prev => Math.max(0, prev - 1));
-  const handleNextBoard = () => setActiveBoardIdx(prev => Math.min(199, prev + 1));
+  const handlePrevBoard = () => {
+    setActiveBoardIdx(prev => Math.max(0, prev - 1));
+    setIsMatchModalOpen(false);
+  };
+  const handleNextBoard = () => {
+    setActiveBoardIdx(prev => Math.min(199, prev + 1));
+    setIsMatchModalOpen(false);
+  };
 
   const handleSearch = () => {
     const targetNum = parseInt(searchQuery, 10);
@@ -70,6 +124,7 @@ export default function InputPage() {
       setActiveBoardIdx(targetNum - 1);
       setIsSearchModalOpen(false);
       setSearchQuery('');
+      setIsMatchModalOpen(false);
     } else {
       alert('1에서 200 사이의 숫자를 입력해 주세요.');
       setSearchQuery('');
@@ -88,24 +143,112 @@ export default function InputPage() {
         `}
       >
         
-        <div className="pt-6 pb-4 px-4 flex justify-between items-center shrink-0">
-          <h1 className="text-lg font-black bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent tracking-tight">
+        {/* 상단 밀어내기 팝업 모달 */}
+        {isMatchModalOpen && matchedBoards.length > 0 && (
+          <div className="w-full px-2 pt-3 shrink-0 flex flex-col items-center animate-in slide-in-from-top-4 duration-300 z-50">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-md border-2 border-amber-500/60 p-2 w-full max-w-[360px] flex flex-col relative">
+              
+              <button 
+                onClick={() => setIsMatchModalOpen(false)} 
+                className="absolute top-1.5 right-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white bg-gray-100 dark:bg-zinc-800 rounded-full p-1 transition-colors z-10"
+              >
+                <X size={12} />
+              </button>
+
+              <div className="flex justify-center gap-2 w-full mt-1">
+                {matchedBoards.slice(matchPageIndex, matchPageIndex + 3).map((boardIdx) => (
+                  <div key={boardIdx} className="flex flex-col items-center w-[100px]">
+                    <button 
+                      onClick={() => {
+                        setActiveBoardIdx(boardIdx);
+                        setIsMatchModalOpen(false);
+                      }}
+                      className="text-[10px] font-black text-gray-800 dark:text-zinc-200 hover:text-amber-500 dark:hover:text-amber-500 transition-colors mb-1.5 cursor-pointer border-b border-amber-500/50 pb-0.5"
+                    >
+                      제 {boardIdx + 1}번 표
+                    </button>
+                    
+                    <div className="grid grid-cols-6 border-l border-t border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 w-full shadow-sm">
+                      {(boards[boardIdx] || Array(30).fill({number: null, color: null})).map((c, cellI) => {
+                        const isDarkBg = c.color === 'bg-[#5D4037]' || c.color === 'bg-[#1E3A8A]';
+                        const textColorClass = c.color ? (isDarkBg ? 'text-white' : 'text-gray-900') : 'text-gray-300 dark:text-zinc-600';
+                        return (
+                          <div key={cellI} className={`aspect-square border-r border-b border-gray-300 dark:border-zinc-600 flex items-center justify-center text-[9px] font-bold transition-colors ${c.color || 'bg-white dark:bg-zinc-900'} ${textColorClass}`}>
+                            {c.number !== null ? c.number : ''}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {matchedBoards.length > 3 && (
+                <div className="flex justify-center items-center gap-3 mt-2 mb-0.5">
+                  <button 
+                    disabled={matchPageIndex === 0} 
+                    onClick={() => setMatchPageIndex(p => p - 3)} 
+                    className="p-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 disabled:opacity-30 transition-colors text-gray-700 dark:text-gray-300"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <span className="font-bold text-[10px] text-gray-500 dark:text-zinc-400">
+                    <span className="text-amber-500">{Math.floor(matchPageIndex / 3) + 1}</span> / {Math.ceil(matchedBoards.length / 3)}
+                  </span>
+                  <button 
+                    disabled={matchPageIndex + 3 >= matchedBoards.length} 
+                    onClick={() => setMatchPageIndex(p => p + 3)} 
+                    className="p-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 disabled:opacity-30 transition-colors text-gray-700 dark:text-gray-300"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 💡 상단 타이틀 영역 (여백 최적화: pt-6 -> pt-4, pb-4 -> pb-3) */}
+        <div className={`${isMatchModalOpen ? 'pt-2' : 'pt-4'} pb-3 px-3 flex justify-between items-center shrink-0 gap-1 overflow-hidden transition-all duration-300`}>
+          <h1 className="text-[15px] sm:text-lg font-black bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent tracking-tight whitespace-nowrap shrink">
             당첨 번호 입력 스튜디오
           </h1>
-          <button 
-            onClick={handleReset} 
-            className="text-xs bg-red-50 dark:bg-zinc-900/50 text-red-500 border border-red-500/30 px-2.5 py-1.5 rounded-md font-bold hover:bg-red-100 dark:hover:bg-red-950/50 active:scale-95 transition-all shadow-sm"
-          >
-            현재 표 지우기
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button 
+              onClick={() => {
+                const matches = getMatchedBoardsForCurrentBoard();
+                if (matches.length > 0) {
+                  setMatchedBoards(matches);
+                  setMatchPageIndex(0);
+                  setIsMatchModalOpen(true);
+                } else {
+                  alert('현재 표에 3개 이상 일치하는 동일 끝수 패턴이 없습니다.');
+                }
+              }}
+              className={`text-[11px] sm:text-xs px-2 py-1.5 rounded-md font-bold transition-all shadow-sm flex items-center gap-1 whitespace-nowrap ${
+                hasPattern 
+                  ? 'bg-amber-500 text-white hover:bg-amber-600 active:scale-95 shadow-amber-500/30' 
+                  : 'bg-gray-200 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500 hover:bg-gray-300 dark:hover:bg-zinc-700'
+              }`}
+            >
+              <Layers size={12} />
+              동일 패턴
+            </button>
+            <button 
+              onClick={handleReset} 
+              className="text-[11px] sm:text-xs bg-red-50 dark:bg-zinc-900/50 text-red-500 border border-red-500/30 px-2 py-1.5 rounded-md font-bold hover:bg-red-100 dark:hover:bg-red-950/50 active:scale-95 transition-all shadow-sm whitespace-nowrap"
+            >
+              표 지우기
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] flex flex-col items-center w-full">
+        {/* 💡 스크롤 되는 중앙 영역 (오직 팔레트와 표만 스크롤 됨) */}
+        <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] flex flex-col items-center w-full pb-2">
           
-          <div className="w-[90%] bg-gray-50 dark:bg-zinc-800/80 rounded-2xl p-3 mb-6 border border-gray-200 dark:border-zinc-700/50 shadow-sm shrink-0 transition-colors duration-300">
+          {/* 팔레트 영역 (mb-6 -> mb-4로 여백 축소) */}
+          <div className="w-[90%] bg-gray-50 dark:bg-zinc-800/80 rounded-2xl p-2.5 mb-4 border border-gray-200 dark:border-zinc-700/50 shadow-sm shrink-0 transition-colors duration-300">
             <div className="flex justify-center gap-1.5 sm:gap-2">
-              
-              {/* 1. 마우스 포인터 (숫자 입력 모드) 추가 */}
               <button
                 onClick={() => setSelectedBrush(null)}
                 className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center border-2 transition-all ${
@@ -117,7 +260,6 @@ export default function InputPage() {
                 <MousePointer2 className={selectedBrush === null ? "text-amber-500" : "text-gray-700"} size={14} />
               </button>
 
-              {/* 2. 지우개 (색상 삭제 모드) */}
               <button
                 onClick={() => setSelectedBrush('eraser')}
                 className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center border-2 transition-all ${
@@ -129,7 +271,6 @@ export default function InputPage() {
                 <Eraser className="text-gray-700" size={14} />
               </button>
               
-              {/* 3. 색상 팔레트 */}
               {colors.map(c => (
                 <button
                   key={c.id}
@@ -144,10 +285,14 @@ export default function InputPage() {
             </div>
           </div>
 
-          <div className="w-full px-4 mb-6 shrink-0">
+          {/* 메인 6x5 표 (mb-6 -> mb-2로 하단 여백 대폭 축소) */}
+          <div className="w-full px-4 mb-2 shrink-0">
             <div className="grid grid-cols-6 border-l border-t border-gray-300 dark:border-zinc-500 bg-white dark:bg-zinc-900 shadow-sm w-full transition-colors duration-300">
               {activeBoard.map((cell, cellIdx) => {
                 const isFocused = focusedCell?.boardIdx === activeBoardIdx && focusedCell?.cellIdx === cellIdx;
+                const isDarkBg = cell.color === 'bg-[#5D4037]' || cell.color === 'bg-[#1E3A8A]';
+                const textColorClass = cell.color ? (isDarkBg ? 'text-white' : 'text-gray-900') : 'text-gray-900 dark:text-white';
+
                 return (
                   <div
                     key={cellIdx}
@@ -155,7 +300,7 @@ export default function InputPage() {
                     className={`
                       aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold text-xl cursor-pointer transition-colors duration-200
                       ${cell.color ? cell.color : 'bg-white dark:bg-zinc-900'} 
-                      ${cell.color ? 'text-gray-900' : 'text-gray-900 dark:text-white'}
+                      ${textColorClass}
                       ${isFocused ? 'ring-inset ring-[3px] ring-amber-500 z-10' : ''}
                     `}
                   >
@@ -165,8 +310,11 @@ export default function InputPage() {
               })}
             </div>
           </div>
+        </div>
 
-          <div className="flex items-center justify-center w-full max-w-[200px] mb-8 bg-white dark:bg-zinc-800 rounded-full shadow-sm border border-gray-200 dark:border-zinc-700 p-1 shrink-0 transition-colors duration-300">
+        {/* 💡 하단에 찰싹 고정된(Sticky) 이동 버튼! 스크롤 영역 바깥으로 빼내어 절대 안 사라짐 */}
+        <div className="w-full px-4 flex justify-center shrink-0 mb-3 relative z-20">
+          <div className="flex items-center justify-center w-full max-w-[200px] bg-white dark:bg-zinc-800 rounded-full shadow-sm border border-gray-200 dark:border-zinc-700 p-1 transition-colors duration-300">
             <button 
               onClick={handlePrevBoard}
               disabled={activeBoardIdx === 0}
@@ -185,9 +333,9 @@ export default function InputPage() {
               <ChevronRight size={20} />
             </button>
           </div>
-
         </div>
 
+        {/* 최하단 메뉴바 */}
         <div 
           className={`
             w-full bg-white dark:bg-zinc-900 border-t border-gray-100 dark:border-zinc-800 
@@ -213,7 +361,10 @@ export default function InputPage() {
             <span className="text-[11px] font-bold leading-none group-hover:text-amber-500 transition-colors">검색</span>
           </button>
 
-          <button onClick={() => alert('향후 추가될 기능입니다.')} className="flex flex-col items-center text-gray-500 dark:text-zinc-400 w-16 gap-1.5 group">
+          <button 
+            onClick={() => alert('향후 추가될 기능입니다.')} 
+            className="flex flex-col items-center text-gray-500 dark:text-zinc-400 w-16 gap-1.5 group"
+          >
             <div className="bg-gray-100 dark:bg-black group-hover:text-amber-500 p-2 rounded-xl w-full flex justify-center shadow-sm transition-all duration-300 group-active:scale-95">
               <Settings size={20} />
             </div>
@@ -230,7 +381,7 @@ export default function InputPage() {
                   onClick={() => setIsSearchModalOpen(false)} 
                   className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-zinc-700 active:bg-gray-300 dark:active:bg-zinc-600 transition-colors"
                 >
-                  <X className="text-gray-600 dark:text-zinc-300" size={18} />
+                  <X size={18} className="text-gray-600 dark:text-zinc-300" />
                 </button>
               </div>
               <div className="p-5 flex flex-col gap-4 bg-gray-100 dark:bg-zinc-950">
@@ -262,7 +413,7 @@ export default function InputPage() {
                   onClick={() => setIsNumberModalOpen(false)} 
                   className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-zinc-700 active:bg-gray-300 dark:active:bg-zinc-600 transition-colors"
                 >
-                  <X className="text-gray-600 dark:text-zinc-300" size={20} />
+                  <X size={20} className="text-gray-600 dark:text-zinc-300" />
                 </button>
               </div>
               <div className="p-4 bg-gray-100 dark:bg-zinc-950">
