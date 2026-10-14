@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { PenTool, History } from 'lucide-react';
+// 💡 변경됨: LineChart, CheckCircle 아이콘을 가져옵니다.
+import { PenTool, History, LineChart, CheckCircle } from 'lucide-react';
 
 export default function HomePage() {
   return (
@@ -42,7 +43,7 @@ export default function HomePage() {
             </div>
           </Link>
 
-          {/* 2. (신규) 역대 당첨 번호 조회 라운지로 이동 */}
+          {/* 2. 역대 당첨 번호 조회 라운지로 이동 */}
           <Link 
             href="/history" 
             className="group relative w-full flex items-center p-4 bg-gray-50 dark:bg-zinc-800/80 rounded-2xl border border-gray-200 dark:border-zinc-700/50 hover:border-amber-500/50 dark:hover:border-amber-500/50 transition-all duration-300 active:scale-95 shadow-sm"
@@ -62,8 +63,47 @@ export default function HomePage() {
             </div>
           </Link>
 
-        </div>
+          {/* 3. 로또 패턴 분석 메뉴 */}
+          <Link 
+            href="/pattern" 
+            className="group relative w-full flex items-center p-4 bg-gray-50 dark:bg-zinc-800/80 rounded-2xl border border-gray-200 dark:border-zinc-700/50 hover:border-amber-500/50 dark:hover:border-amber-500/50 transition-all duration-300 active:scale-95 shadow-sm"
+          >
+            <div className="flex items-center gap-4 w-full">
+              <div className="p-3 bg-white dark:bg-zinc-900 rounded-xl shadow-sm text-gray-600 dark:text-zinc-400 group-hover:text-amber-500 transition-colors">
+                <LineChart size={22} />
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="font-bold text-gray-900 dark:text-zinc-100 text-[15px]">
+                  로또 패턴 분석
+                </span>
+                <span className="text-[12px] text-gray-500 dark:text-zinc-400 mt-0.5">
+                  나만의 1등 당첨 패턴 찾기 및 관리
+                </span>
+              </div>
+            </div>
+          </Link>
 
+          {/* 4. (신규) 6/45 추첨 번호 메뉴 */}
+          <Link 
+            href="/pick" 
+            className="group relative w-full flex items-center p-4 bg-gray-50 dark:bg-zinc-800/80 rounded-2xl border border-gray-200 dark:border-zinc-700/50 hover:border-amber-500/50 dark:hover:border-amber-500/50 transition-all duration-300 active:scale-95 shadow-sm"
+          >
+            <div className="flex items-center gap-4 w-full">
+              <div className="p-3 bg-white dark:bg-zinc-900 rounded-xl shadow-sm text-gray-600 dark:text-zinc-400 group-hover:text-amber-500 transition-colors">
+                <CheckCircle size={22} />
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="font-bold text-gray-900 dark:text-zinc-100 text-[15px]">
+                  6/45 추첨 번호
+                </span>
+                <span className="text-[12px] text-gray-500 dark:text-zinc-400 mt-0.5">
+                  실전 번호 마킹 및 선택 조합 즉시 진단
+                </span>
+              </div>
+            </div>
+          </Link>
+
+        </div>
       </div>
     </div>
   );
