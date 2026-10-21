@@ -37,7 +37,6 @@ export default function MultiPatternPage() {
     setSearchError('');
   };
 
-  // 6x5 표 하나를 그리는 컴포넌트 (💡 숫자 표시 기능 추가됨)
   const renderGrid = (index: number) => {
     const patternNumber = (currentPage - 1) * itemsPerPage + index + 1;
     const targetBoard = boards[patternNumber - 1] || [];
@@ -49,21 +48,23 @@ export default function MultiPatternPage() {
         </div>
         <div className="grid grid-cols-6 gap-1 w-full flex-1">
           {Array.from({ length: 30 }).map((_, i) => {
-            const cell = targetBoard[i];
-            const cellColor = cell?.color;
-            const cellNumber = cell?.number; // 💡 숫자 데이터 가져오기
+            // 💡 초강력 방어: 데이터가 비어있을 수 있는 모든 경우의 수를 완벽 차단
+            const cell = targetBoard[i] || { number: null, color: null };
+            const cellColor = cell.color;
+            const cellNumber = cell.number;
             
-            // 어두운 배경색(남색, 갈색)일 경우 숫자를 흰색으로, 밝은 색이면 검은색으로 처리
             const isDarkBg = cellColor === 'bg-[#5D4037]' || cellColor === 'bg-[#1E3A8A]';
-            const textColorClass = cellColor ? (isDarkBg ? 'text-white' : 'text-gray-900') : 'text-transparent';
+            const textColorClass = cellColor ? (isDarkBg ? 'text-white' : 'text-gray-900') : 'text-gray-900 dark:text-white';
+
+            // 💡 강제 출력: 숫자가 존재하기만 하면 무조건 문자로 렌더링
+            const displayText = (cellNumber !== null && cellNumber !== undefined) ? String(cellNumber) : '';
 
             return (
               <div 
                 key={i} 
-                // 💡 flex와 text 속성을 추가하여 숫자가 칸 정중앙에 예쁘게 나오도록 수정
-                className={`w-full h-full min-h-[16px] rounded-[3px] flex items-center justify-center text-[10px] font-bold ${cellColor ? cellColor : 'bg-zinc-700/30'} ${textColorClass}`}
+                className={`w-full h-full min-h-[16px] rounded-[3px] flex items-center justify-center text-[10px] font-bold transition-colors ${cellColor ? cellColor : 'bg-zinc-700/30'} ${textColorClass}`}
               >
-                {cellNumber !== null ? cellNumber : ''}
+                {displayText}
               </div>
             );
           })}
@@ -78,12 +79,12 @@ export default function MultiPatternPage() {
     <div className="min-h-screen bg-gray-100 dark:bg-black flex items-center justify-center sm:p-4 transition-colors duration-300">
       <div className="w-full max-w-[400px] sm:aspect-[9/16] bg-white dark:bg-zinc-900 relative flex flex-col shadow-2xl sm:rounded-[3rem] overflow-hidden h-screen sm:h-auto border-[6px] border-white dark:border-zinc-800">
         
-        {/* 상단 헤더 */}
         <header className="flex items-center justify-between p-4 border-b border-zinc-800/50 shrink-0 bg-zinc-900 z-10">
           <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-zinc-800 text-zinc-400 transition-colors">
             <Home size={20} />
           </Link>
-          <h1 className="text-[16px] font-bold text-white">당첨 패턴 모아보기</h1>
+          {/* 💡 함정 수사: 이 글자가 휴대폰에 뜨면 업데이트가 정상적으로 된 것입니다 */}
+          <h1 className="text-[15px] font-black text-amber-500">당첨 패턴 모아보기 (동기화)</h1>
           <button 
             onClick={() => setIsSearchModalOpen(true)} 
             className="p-2 -mr-2 rounded-full hover:bg-zinc-800 text-zinc-400 transition-colors"
@@ -92,7 +93,6 @@ export default function MultiPatternPage() {
           </button>
         </header>
 
-        {/* 페이지 네비게이션 */}
         <div className="flex items-center justify-between px-4 py-3 bg-zinc-900/90 border-b border-zinc-800/50 shrink-0 z-10">
           <button 
             onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
@@ -113,14 +113,12 @@ export default function MultiPatternPage() {
           </button>
         </div>
 
-        {/* 2x3 바둑판 다중 뷰어 영역 */}
         <div className="flex-1 p-3 bg-zinc-950 overflow-hidden">
           <div className="grid grid-cols-2 grid-rows-3 gap-3 h-full">
             {Array.from({ length: 6 }).map((_, index) => renderGrid(index))}
           </div>
         </div>
 
-        {/* 자체 검색 팝업창 (모달) */}
         {isSearchModalOpen && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
             <div className="w-full max-w-[300px] bg-zinc-900 border border-zinc-700 rounded-2xl p-5 shadow-2xl">
