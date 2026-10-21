@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Home, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useLottoStore } from '../store/useLottoStore';
 
 export default function MultiPatternPage() {
   const [currentPage, setCurrentPage] = useState(1);
@@ -10,22 +11,25 @@ export default function MultiPatternPage() {
   const itemsPerPage = 6;
   const totalPages = Math.ceil(totalItems / itemsPerPage);
 
-  // 💡 신규 추가: 팝업창(모달)을 띄우고 숨기기 위한 상태 관리
+  const { boards } = useLottoStore();
+
+  const [isMounted, setIsMounted] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchError, setSearchError] = useState('');
 
-  // 💡 신규 추가: 팝업창에서 '이동' 버튼을 눌렀을 때 실행되는 안전한 검색 로직
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const handleSearchSubmit = () => {
     const targetNum = parseInt(searchInput, 10);
     
-    // 에러 방지: 숫자가 아니거나 범위를 벗어난 경우 팝업창 안에 빨간 글씨로 안내
     if (isNaN(targetNum) || targetNum < 1 || targetNum > totalItems) {
       setSearchError(`1부터 ${totalItems} 사이의 숫자만 입력 가능합니다.`);
       return;
     }
     
-    // 정상 입력: 페이지 계산 후 이동하고 팝업창 닫기
     const targetPage = Math.ceil(targetNum / itemsPerPage);
     setCurrentPage(targetPage);
     setIsSearchModalOpen(false);
@@ -33,10 +37,10 @@ export default function MultiPatternPage() {
     setSearchError('');
   };
 
-  // 6x5 표 하나를 그리는 컴포넌트
+  // 6x5 표 하나를 그리는 컴포넌트 (💡 숫자 표시 기능 추가됨)
   const renderGrid = (index: number) => {
     const patternNumber = (currentPage - 1) * itemsPerPage + index + 1;
-    const mockActiveCells = [2, 7, 15, 22, 28]; // 가짜 패턴 데이터
+    const targetBoard = boards[patternNumber - 1] || [];
 
     return (
       <div key={index} className="flex flex-col bg-zinc-800/40 p-2.5 rounded-xl border border-zinc-700/50 h-full justify-between">
@@ -44,16 +48,31 @@ export default function MultiPatternPage() {
           #{patternNumber} 패턴
         </div>
         <div className="grid grid-cols-6 gap-1 w-full flex-1">
-          {Array.from({ length: 30 }).map((_, i) => (
-            <div 
-              key={i} 
-              className={`w-full h-full min-h-[16px] rounded-[3px] ${mockActiveCells.includes(i) ? 'bg-amber-500' : 'bg-zinc-700/30'}`}
-            />
-          ))}
+          {Array.from({ length: 30 }).map((_, i) => {
+            const cell = targetBoard[i];
+            const cellColor = cell?.color;
+            const cellNumber = cell?.number; // 💡 숫자 데이터 가져오기
+            
+            // 어두운 배경색(남색, 갈색)일 경우 숫자를 흰색으로, 밝은 색이면 검은색으로 처리
+            const isDarkBg = cellColor === 'bg-[#5D4037]' || cellColor === 'bg-[#1E3A8A]';
+            const textColorClass = cellColor ? (isDarkBg ? 'text-white' : 'text-gray-900') : 'text-transparent';
+
+            return (
+              <div 
+                key={i} 
+                // 💡 flex와 text 속성을 추가하여 숫자가 칸 정중앙에 예쁘게 나오도록 수정
+                className={`w-full h-full min-h-[16px] rounded-[3px] flex items-center justify-center text-[10px] font-bold ${cellColor ? cellColor : 'bg-zinc-700/30'} ${textColorClass}`}
+              >
+                {cellNumber !== null ? cellNumber : ''}
+              </div>
+            );
+          })}
         </div>
       </div>
     );
   };
+
+  if (!isMounted) return null;
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-black flex items-center justify-center sm:p-4 transition-colors duration-300">
@@ -65,7 +84,6 @@ export default function MultiPatternPage() {
             <Home size={20} />
           </Link>
           <h1 className="text-[16px] font-bold text-white">당첨 패턴 모아보기</h1>
-          {/* 돋보기 버튼 클릭 시 팝업창 열기 */}
           <button 
             onClick={() => setIsSearchModalOpen(true)} 
             className="p-2 -mr-2 rounded-full hover:bg-zinc-800 text-zinc-400 transition-colors"
@@ -102,7 +120,7 @@ export default function MultiPatternPage() {
           </div>
         </div>
 
-        {/* 💡 신규 추가: 고급스러운 자체 검색 팝업창 (모달) */}
+        {/* 자체 검색 팝업창 (모달) */}
         {isSearchModalOpen && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
             <div className="w-full max-w-[300px] bg-zinc-900 border border-zinc-700 rounded-2xl p-5 shadow-2xl">
@@ -114,14 +132,13 @@ export default function MultiPatternPage() {
                 value={searchInput}
                 onChange={(e) => {
                   setSearchInput(e.target.value);
-                  setSearchError(''); // 타이핑을 시작하면 빨간 에러 글씨 지우기
+                  setSearchError(''); 
                 }}
                 className="w-full bg-zinc-800 border border-zinc-600 text-white rounded-lg px-3 py-2.5 focus:outline-none focus:border-amber-500 mb-2 transition-colors"
                 placeholder="예: 10"
                 autoFocus
               />
               
-              {/* 에러 메시지 출력 영역 */}
               {searchError && (
                 <p className="text-red-400 text-[12px] mb-2">{searchError}</p>
               )}
