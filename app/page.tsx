@@ -1,6 +1,6 @@
 import Link from 'next/link';
 // 💡 변경됨: LineChart, CheckCircle 아이콘을 가져옵니다.
-import { PenTool, History, LineChart, CheckCircle } from 'lucide-react';
+import { PenTool, History, LineChart, CheckCircle, LayoutGrid } from 'lucide-react';
 
 export default function HomePage() {
   return (
@@ -98,6 +98,26 @@ export default function HomePage() {
                 </span>
                 <span className="text-[12px] text-gray-500 dark:text-zinc-400 mt-0.5">
                   실전 번호 마킹 및 선택 조합 즉시 진단
+                </span>
+              </div>
+            </div>
+          </Link>
+
+          {/* 5. (신규) 당첨 패턴 모아보기 메뉴 */}
+          <Link 
+            href="/multi-pattern" 
+            className="group relative w-full flex items-center p-4 bg-gray-50 dark:bg-zinc-800/80 rounded-2xl border border-gray-200 dark:border-zinc-700/50 hover:border-amber-500/50 dark:hover:border-amber-500/50 transition-all duration-300 active:scale-95 shadow-sm"
+          >
+            <div className="flex items-center gap-4 w-full">
+              <div className="p-3 bg-white dark:bg-zinc-900 rounded-xl shadow-sm text-gray-600 dark:text-zinc-400 group-hover:text-amber-500 transition-colors">
+                <LayoutGrid size={22} />
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="font-bold text-gray-900 dark:text-zinc-100 text-[15px]">
+                  당첨 패턴 모아보기
+                </span>
+                <span className="text-[12px] text-gray-500 dark:text-zinc-400 mt-0.5">
+                  역대 당첨 번호 흐름을 한눈에 비교 분석
                 </span>
               </div>
             </div>
