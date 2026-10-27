@@ -14,6 +14,7 @@ interface LottoStore {
   setCellNumber: (num: number) => void;
   resetBoards: () => void;
   resetBoard: (boardIdx: number) => void;
+  setBoard: (boardIdx: number, cells: CellData[]) => void;
 }
 
 // 1. 표의 개수를 50개에서 200개로 대폭 확장
@@ -58,6 +59,13 @@ export const useLottoStore = create<LottoStore>()(
       resetBoard: (boardIdx) => set((state) => {
         const newBoards = [...state.boards];
         newBoards[boardIdx] = Array.from({ length: 30 }, () => ({ number: null, color: null }));
+        return { boards: newBoards, focusedCell: null };
+      }),
+
+      // 💡 회차별 분석에서 저장한 표를 원하는 표 번호에 통째로 덮어쓰기 (불러오기용)
+      setBoard: (boardIdx, cells) => set((state) => {
+        const newBoards = [...state.boards];
+        newBoards[boardIdx] = cells.map((c) => ({ number: c.number, color: c.color }));
         return { boards: newBoards, focusedCell: null };
       }),
     }),

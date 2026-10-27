@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Home, Search, Settings, ChevronLeft, ChevronRight, X, Eraser, MousePointer2, Layers } from 'lucide-react';
+import { Home, Search, Settings, ChevronLeft, ChevronRight, X, Eraser, MousePointer2, Layers, Save } from 'lucide-react';
 import { useLottoStore } from '../store/useLottoStore';
+import { useRoundStore, getTodayString, getNextSeq, makeRoundName, getLatestDrawNo } from '../store/useRoundStore';
 
 export default function InputPage() {
   const { boards, focusedCell, setFocusedCell, setCellColor, setCellNumber, resetBoard } = useLottoStore();
@@ -19,6 +20,20 @@ export default function InputPage() {
   const [isMatchModalOpen, setIsMatchModalOpen] = useState(false);
   const [matchedBoards, setMatchedBoards] = useState<number[]>([]);
   const [matchPageIndex, setMatchPageIndex] = useState(0);
+
+  // 💡 회차별 분석 저장 기능
+  const { savedRounds, addRound, jumpToBoard, setJumpToBoard } = useRoundStore();
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [saveRoundInput, setSaveRoundInput] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
+
+  // 💡 회차별 분석 화면에서 '불러오기'로 넘어온 경우, 해당 표로 자동 이동
+  useEffect(() => {
+    if (jumpToBoard !== null) {
+      setActiveBoardIdx(jumpToBoard);
+      setJumpToBoard(null);
+    }
+  }, [jumpToBoard, setJumpToBoard]);
 
   const numbers1to45 = Array.from({ length: 45 }, (_, i) => i + 1);
   
@@ -130,6 +145,38 @@ export default function InputPage() {
       setSearchQuery('');
     }
   };
+
+    // 💡 [저장] 버튼: 빈 표인지 확인하고 저장 팝업 열기
+  const handleOpenSaveModal = () => {
+    const board = boards[activeBoardIdx] || [];
+    const hasNumber = board.some((c) => c && c.number !== null);
+    if (!hasNumber) {
+      alert('숫자가 입력된 칸이 없어 저장할 수 없습니다.');
+      return;
+    }
+    setSaveRoundInput(String(getLatestDrawNo())); // 가장 최근 추첨 회차를 미리 채움
+    setIsSaveModalOpen(true);
+  };
+
+  // 💡 저장 팝업의 [저장] 버튼: 회차_날짜_순번으로 저장
+  const handleConfirmSave = () => {
+    const round = parseInt(saveRoundInput, 10);
+    if (isNaN(round) || round < 1 || round > 9999) {
+      alert('추첨 회차를 올바르게 입력해 주세요. (예: 1247)');
+      return;
+    }
+    const saved = addRound(round, activeBoardIdx, boards[activeBoardIdx]);
+    setIsSaveModalOpen(false);
+    setSaveRoundInput('');
+    setSaveMessage(`${saved.name} 저장 완료!`);
+    setTimeout(() => setSaveMessage(''), 2000);
+  };
+
+  // 저장 팝업에 보여줄 이름 미리보기
+  const previewRound = parseInt(saveRoundInput, 10);
+  const previewName = !isNaN(previewRound) && previewRound >= 1
+    ? makeRoundName(previewRound, getTodayString(), getNextSeq(savedRounds, previewRound))
+    : '회차를 입력하세요';
 
   const activeBoard = boards[activeBoardIdx] || Array.from({ length: 30 }, () => ({ number: null, color: null }));
 
@@ -313,7 +360,7 @@ export default function InputPage() {
         </div>
 
         {/* 💡 하단에 찰싹 고정된(Sticky) 이동 버튼! 스크롤 영역 바깥으로 빼내어 절대 안 사라짐 */}
-        <div className="w-full px-4 flex justify-center shrink-0 mb-3 relative z-20">
+        <div className="w-full px-4 flex justify-center items-center gap-2 shrink-0 mb-3 relative z-20">
           <div className="flex items-center justify-center w-full max-w-[200px] bg-white dark:bg-zinc-800 rounded-full shadow-sm border border-gray-200 dark:border-zinc-700 p-1 transition-colors duration-300">
             <button 
               onClick={handlePrevBoard}
@@ -333,6 +380,14 @@ export default function InputPage() {
               <ChevronRight size={20} />
             </button>
           </div>
+          {/* 💡 회차별 분석으로 저장 버튼 */}
+          <button
+            onClick={handleOpenSaveModal}
+            className="shrink-0 h-[44px] px-4 rounded-full bg-emerald-500 text-white text-sm font-bold flex items-center gap-1.5 shadow-sm hover:bg-emerald-600 active:scale-95 transition-all"
+          >
+            <Save size={16} />
+            저장
+          </button>
         </div>
 
         {/* 최하단 메뉴바 */}
@@ -402,6 +457,63 @@ export default function InputPage() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* 💡 회차별 분석 저장 팝업 */}
+        {isSaveModalOpen && (
+          <div className="absolute inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-[300px] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+              <div className="bg-gray-50 dark:bg-zinc-800 p-3 border-b dark:border-zinc-700 flex justify-between items-center">
+                <h3 className="font-bold text-gray-800 dark:text-zinc-200 ml-2 text-sm">회차별 분석으로 저장</h3>
+                <button 
+                  onClick={() => setIsSaveModalOpen(false)} 
+                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  <X size={18} className="text-gray-600 dark:text-zinc-300" />
+                </button>
+              </div>
+              <div className="p-5 flex flex-col gap-3 bg-gray-100 dark:bg-zinc-950">
+                <p className="text-xs text-gray-500 dark:text-zinc-400">
+                  <strong className="text-amber-500">{activeBoardIdx + 1}번 표</strong>를 저장합니다.
+                </p>
+                <label className="text-xs font-bold text-gray-700 dark:text-zinc-300">추첨 회차</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="예: 1247"
+                  value={saveRoundInput}
+                  onChange={(e) => setSaveRoundInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleConfirmSave()}
+                  className="w-full border border-gray-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white rounded-xl px-4 py-3 text-center text-base font-bold outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                  autoFocus
+                />
+                <div className="text-center text-[11px] text-gray-500 dark:text-zinc-400">
+                  저장 이름: <span className="font-bold text-gray-800 dark:text-zinc-100">{previewName}</span>
+                </div>
+                <div className="flex gap-2 mt-1">
+                  <button
+                    onClick={() => setIsSaveModalOpen(false)}
+                    className="flex-1 py-3 rounded-xl bg-gray-200 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 text-sm font-medium hover:bg-gray-300 dark:hover:bg-zinc-700 transition-colors"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={handleConfirmSave}
+                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold hover:opacity-90 active:scale-95 transition-all shadow-lg shadow-amber-500/25"
+                  >
+                    저장
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 💡 저장 완료 알림 (2초 후 자동으로 사라짐) */}
+        {saveMessage && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg whitespace-nowrap">
+            {saveMessage}
           </div>
         )}
 
