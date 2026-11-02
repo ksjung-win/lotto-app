@@ -2,17 +2,19 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Home, Download, Ticket, Search } from 'lucide-react';
+import { Home, Download, Ticket, Search, Waypoints } from 'lucide-react';
 import InputTab from './InputTab';
 import TicketListTab from './TicketListTab';
 import PatternTab from './PatternTab';
+import ConnectTab from './ConnectTab';
 
-type TabKey = 'input' | 'list' | 'pattern';
+type TabKey = 'input' | 'list' | 'pattern' | 'connect';
 
 const TABS: { key: TabKey; label: string; icon: typeof Home }[] = [
   { key: 'input', label: '입력', icon: Download },
   { key: 'list', label: '내 복권', icon: Ticket },
-  { key: 'pattern', label: '패턴 분석', icon: Search },
+  { key: 'pattern', label: '구역 분석', icon: Search },
+  { key: 'connect', label: '연결 분석', icon: Waypoints },
 ];
 
 export default function TicketScanPage() {
@@ -39,14 +41,14 @@ export default function TicketScanPage() {
           <div className="w-9" />
         </header>
 
-        {/* 💡 탭 3개 */}
+        {/* 💡 탭 4개 */}
         <div className="px-4 pb-3 shrink-0">
-          <div className="grid grid-cols-3 bg-gray-100 dark:bg-zinc-800 rounded-xl p-1">
+          <div className="grid grid-cols-4 bg-gray-100 dark:bg-zinc-800 rounded-xl p-1">
             {TABS.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-bold transition-colors ${
+                className={`flex items-center justify-center gap-1 py-2 rounded-lg text-[11.5px] font-bold whitespace-nowrap transition-colors ${
                   tab === key ? 'bg-white dark:bg-zinc-900 text-amber-500 shadow-sm' : 'text-gray-500 dark:text-zinc-400'
                 }`}
               >
@@ -62,6 +64,7 @@ export default function TicketScanPage() {
           {isMounted && tab === 'input' && <InputTab onGoToList={() => setTab('list')} />}
           {isMounted && tab === 'list' && <TicketListTab onGoToInput={() => setTab('input')} />}
           {isMounted && tab === 'pattern' && <PatternTab onGoToInput={() => setTab('input')} />}
+          {isMounted && tab === 'connect' && <ConnectTab onGoToInput={() => setTab('input')} />}
         </div>
       </div>
     </div>
