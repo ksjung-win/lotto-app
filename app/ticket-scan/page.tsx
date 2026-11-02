@@ -30,7 +30,7 @@ export default function TicketScanPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-black flex items-center justify-center sm:p-4 transition-colors duration-300">
-      <div className="w-full max-w-[400px] sm:aspect-[9/16] bg-white dark:bg-zinc-900 relative flex flex-col shadow-2xl sm:rounded-[3rem] overflow-hidden h-screen sm:h-auto border-[6px] border-white dark:border-zinc-800 transition-colors duration-300">
+      <div className="w-full max-w-[400px] sm:aspect-[9/16] bg-white dark:bg-zinc-900 relative flex flex-col shadow-2xl sm:rounded-[3rem] overflow-hidden h-[100dvh] sm:h-auto border-[6px] border-white dark:border-zinc-800 transition-colors duration-300">
 
         {/* 상단 헤더 */}
         <header className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0">

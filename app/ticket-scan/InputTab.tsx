@@ -417,7 +417,8 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
                 })}
               </div>
 
-              <div className="flex gap-2">
+              {/* 💡 버튼은 화면 아래에 항상 붙어 있게 (휴대폰에서 가려지지 않도록) */}
+              <div className="flex gap-2 sticky bottom-0 -mx-3 -mb-3 px-3 py-3 bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-700">
                 <button
                   onClick={() => setManualGames((prev) => prev.map((g, i) => (i === activeGame ? [] : g)))}
                   className="px-3 py-3 rounded-xl bg-gray-200 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 text-xs font-bold"
