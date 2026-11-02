@@ -71,7 +71,7 @@ function ConnectGrid({ ticket, enclosures, showTrapped, phase }: { ticket: Ticke
 export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void }) {
   const { tickets } = useTicketStore();
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
-  const [minLen, setMinLen] = useState(4); // 기본: 벽 4개 이상
+  const [minLen, setMinLen] = useState(3); // 기본: 벽 3개 이상
   const [step, setStep] = useState<Step>(1);
   const [numberFilter, setNumberFilter] = useState<number | null>(null); // 갇힌 번호로 골라 보기
   const [lastSeen, setLastSeen] = useState<number | null>(null);
@@ -199,7 +199,7 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
 
       {/* 💡 단계 설명 */}
       <p className="text-[11px] text-gray-500 dark:text-zinc-400 leading-relaxed break-keep">
-        {step === 1 && '끝자리가 같은 번호가 벽처럼 이어져 한 구역을 막은 복권입니다. 주황 테두리는 열린 칸(1개까지 닫힌 것으로 봄)이에요.'}
+        {step === 1 && '끝자리가 같은 번호가 벽처럼 이어져 한 구역을 완전히 막은 복권입니다. 끝자리가 다른 번호가 하나라도 끼면 제외해요.'}
         {step === 2 && '벽이 막은 구역 안의 번호가 갇힌 번호입니다. 번호를 누르면 그 번호가 나온 복권만 보여줘요.'}
         {step === 3 &&
           (result.step3Digits.size > 0

@@ -10,12 +10,12 @@ export type GridCell = { row: number; col: number; number: number };
 export type Enclosure = {
   digit: number;          // 벽을 만든 끝수
   walls: GridCell[];      // 구역을 막고 있는 같은 끝수 번호 (벽)
-  gap: GridCell | null;   // 열린 칸 (1개까지 닫힌 것으로 봄). 없으면 null
+  gap: GridCell | null;   // 열린 칸 (지금은 사용하지 않음: 완전히 막힌 것만 인정)
   cells: GridCell[];      // 갇힌 번호 (막힌 구역 안의 번호 전체)
 };
 
 const N4 = [[-1, 0], [1, 0], [0, -1], [0, 1]];                                    // 구역이 퍼지는 방향 (상하좌우)
-const N8 = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]]; // 벽이 이어지는 방향 (대각선 포함)
+const N8 = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]]; // 벽 주변 확인 방향 (대각선 포함)
 
 const ROW_LABELS = ['A', 'B', 'C', 'D', 'E'];
 export const cellName = (row: number, col: number) => `${ROW_LABELS[row]}${col + 1}`;
@@ -51,17 +51,9 @@ const splitRegions = (R: number, C: number, wall: Set<string>): string[][] => {
 };
 
 /**
- * 💡 열린 칸이 될 수 있는 자리인지 확인
- * 같은 끝수 번호 두 개 사이에 끼어 있는 한 칸만 인정 (가로·세로·대각선, 예: 24·27·34)
- * 벽과 표 끝 사이의 빈자리는 열린 칸이 아님
- */
-const isGapCandidate = (walls: Set<string>, r: number, c: number) =>
-  N8.some(([dy, dx]) => walls.has(key(r - dy, c - dx)) && walls.has(key(r + dy, c + dx)));
-
-/**
  * 💡 한 끝수(digit)로 막힌 구역 찾기
  * 1) 같은 끝수 번호를 벽으로 놓고, 표가 둘 이상으로 나뉘면 가장 큰 구역을 뺀 나머지가 '막힌 구역'
- * 2) 열린 칸 1개를 벽으로 채웠을 때 새로 막히는 구역도 인정 (같은 끝수 벽을 가장 많이 쓰는 것, 같으면 더 촘촘한 것 우선)
+ * 2) 끝자리가 다른 번호가 하나라도 끼어 끊긴 벽은 제외 (완전히 막힌 것만 인정)
  * 3) 구역을 막는 같은 끝수 번호가 minWall개 이상이어야 함
  */
 export const findEnclosures = (grid: Grid, digit: number, minWall: number): Enclosure[] => {
@@ -102,43 +94,13 @@ export const findEnclosures = (grid: Grid, digit: number, minWall: number): Encl
 
   const sortCells = (list: GridCell[]) => list.sort((p, q) => p.row - q.row || p.col - q.col);
 
-  // 1) 끊김 없이 막힌 구역
-  const closed = enclosedBy(walls);
-  const closedArea = new Set(closed.flatMap((e) => Array.from(e.area)));
-  const out: Enclosure[] = closed.map((e) => ({
+  // 끊김 없이 완전히 막힌 구역만
+  return enclosedBy(walls).map((e) => ({
     digit,
     walls: sortCells(e.walls.map(toCell)),
     gap: null,
     cells: sortCells(e.cells.map(toCell)),
   }));
-
-  // 2) 열린 칸 1개로 막힌 구역
-  const candidates: { area: Set<string>; walls: string[]; cells: string[]; gap: string }[] = [];
-  for (let r = 0; r < R; r++) {
-    for (let c = 0; c < C; c++) {
-      const k = key(r, c);
-      if (walls.has(k) || grid[r][c] === null || closedArea.has(k)) continue;
-      if (!isGapCandidate(walls, r, c)) continue;
-      enclosedBy(new Set([...walls, k])).forEach((e) => {
-        if (Array.from(e.area).some((a) => closedArea.has(a))) return;
-        candidates.push({ ...e, gap: k });
-      });
-    }
-  }
-  candidates.sort((a, b) => b.walls.length - a.walls.length || a.area.size - b.area.size);
-  const used = new Set<string>();
-  candidates.forEach((e) => {
-    if (Array.from(e.area).some((a) => used.has(a))) return;
-    e.area.forEach((a) => used.add(a));
-    out.push({
-      digit,
-      walls: sortCells(e.walls.map(toCell)),
-      gap: toCell(e.gap),
-      cells: sortCells(e.cells.map(toCell)),
-    });
-  });
-
-  return out;
 };
 
 // 복권 1장의 모든 막힌 구역 (digits를 주면 그 끝수만)
