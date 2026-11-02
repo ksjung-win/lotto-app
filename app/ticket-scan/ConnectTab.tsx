@@ -4,10 +4,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Ticket as TicketIcon, Sparkles } from 'lucide-react';
 import { useTicketStore, Ticket } from '../store/useTicketStore';
 import { ticketToGrid, pad2 } from '../lib/endDigitPattern';
-import { runFourSteps, cellName, Chain, Trap, TicketChains } from '../lib/connectPattern';
+import { runFourSteps, cellName, Enclosure, TicketResult } from '../lib/connectPattern';
 
 type Step = 1 | 2 | 3 | 4;
-const MIN_OPTIONS = [2, 3, 4];
+const MIN_OPTIONS = [3, 4, 5, 6]; // 구역을 막는 같은 끝수 번호(벽)의 최소 개수
 
 // 회차별 '마지막으로 확인한 시각' (새로 추가된 복권 표시용, 이 휴대폰에만 저장)
 const seenKey = (round: number) => `lotto-connect-seen-${round}`;
@@ -27,20 +27,22 @@ const writeSeen = (round: number, time: number) => {
   }
 };
 
-// 💡 단계별 색 (1·2단계: 남색/노랑, 3·4단계: 보라/빨강)
+// 💡 단계별 색 (1·2단계: 남색 벽/노란 구역, 3·4단계: 보라 벽/빨간 구역, 열린 칸: 주황 테두리)
 const STEP_STYLE = {
-  chain12: 'bg-[#1E3A8A] text-white',
-  trap12: 'bg-yellow-300 text-gray-900 ring-2 ring-inset ring-yellow-500',
-  chain34: 'bg-violet-600 text-white',
-  trap34: 'bg-red-400 text-white ring-2 ring-inset ring-red-600',
+  wall12: 'bg-[#1E3A8A] text-white',
+  trap12: 'bg-yellow-300 text-gray-900',
+  wall34: 'bg-violet-600 text-white',
+  trap34: 'bg-red-400 text-white',
+  gap: 'bg-white dark:bg-zinc-900 text-orange-500 ring-[3px] ring-inset ring-orange-500',
 };
 
-// 💡 복권 1장 표 (연결 칸, 갇힌 칸 색칠)
-function ConnectGrid({ ticket, chains, traps, phase }: { ticket: Ticket; chains: Chain[]; traps: Trap[]; phase: 'early' | 'late' }) {
+// 💡 복권 1장 표 (벽, 열린 칸, 갇힌 구역 색칠)
+function ConnectGrid({ ticket, enclosures, showTrapped, phase }: { ticket: Ticket; enclosures: Enclosure[]; showTrapped: boolean; phase: 'early' | 'late' }) {
   const grid = ticketToGrid(ticket);
-  const chainSet = new Set(chains.flatMap((ch) => ch.cells.map((p) => `${p.row},${p.col}`)));
-  const trapSet = new Set(traps.map((t) => `${t.row},${t.col}`));
-  const chainCls = phase === 'early' ? STEP_STYLE.chain12 : STEP_STYLE.chain34;
+  const wallSet = new Set(enclosures.flatMap((e) => e.walls.map((p) => `${p.row},${p.col}`)));
+  const gapSet = new Set(enclosures.filter((e) => e.gap).map((e) => `${e.gap!.row},${e.gap!.col}`));
+  const trapSet = new Set(showTrapped ? enclosures.flatMap((e) => e.cells.map((p) => `${p.row},${p.col}`)) : []);
+  const wallCls = phase === 'early' ? STEP_STYLE.wall12 : STEP_STYLE.wall34;
   const trapCls = phase === 'early' ? STEP_STYLE.trap12 : STEP_STYLE.trap34;
 
   return (
@@ -48,11 +50,12 @@ function ConnectGrid({ ticket, chains, traps, phase }: { ticket: Ticket; chains:
       {grid.map((row, r) =>
         row.map((n, c) => {
           const key = `${r},${c}`;
-          // 갇힌 칸이 연결 칸이기도 하면 갇힌 색을 먼저 보여줌
           const cls = trapSet.has(key)
             ? trapCls
-            : chainSet.has(key)
-            ? chainCls
+            : gapSet.has(key)
+            ? STEP_STYLE.gap
+            : wallSet.has(key)
+            ? wallCls
             : 'text-gray-400 dark:text-zinc-500';
           return (
             <div key={key} className={`aspect-square border-r border-b border-gray-300 dark:border-zinc-600 flex items-center justify-center font-bold text-[15px] ${cls}`}>
@@ -68,7 +71,7 @@ function ConnectGrid({ ticket, chains, traps, phase }: { ticket: Ticket; chains:
 export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void }) {
   const { tickets } = useTicketStore();
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
-  const [minLen, setMinLen] = useState(3);
+  const [minLen, setMinLen] = useState(4); // 기본: 벽 4개 이상
   const [step, setStep] = useState<Step>(1);
   const [numberFilter, setNumberFilter] = useState<number | null>(null); // 갇힌 번호로 골라 보기
   const [lastSeen, setLastSeen] = useState<number | null>(null);
@@ -108,8 +111,9 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
   const result = useMemo(() => runFourSteps(roundTickets, minLen), [roundTickets, minLen]);
 
   // 새 복권에서 나온 갇힌 번호 (빨간 점 표시용)
-  const newTrapNumbers = (list: TicketChains[]) =>
-    new Set(list.filter((s) => isNew(s.ticket)).flatMap((s) => s.traps.map((t) => t.number)));
+  const newTrapNumbers = (list: TicketResult[]) =>
+    new Set(list.filter((s) => isNew(s.ticket)).flatMap((s) => s.enclosures.flatMap((e) => e.cells.map((c) => c.number))));
+  const hasNumber = (s: TicketResult, n: number) => s.enclosures.some((e) => e.cells.some((c) => c.number === n));
 
   if (roundList.length === 0) {
     return (
@@ -131,9 +135,9 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
   const chipOff = 'bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-400 border-gray-200 dark:border-zinc-700';
 
   const STEPS: { key: Step; title: string; value: string }[] = [
-    { key: 1, title: '① 연결', value: `${result.step1.length}장` },
+    { key: 1, title: '① 벽', value: `${result.step1.length}장` },
     { key: 2, title: '② 갇힌', value: `${result.step2Numbers.length}개` },
-    { key: 3, title: '③ 연결', value: `${result.step3.length}장` },
+    { key: 3, title: '③ 벽', value: `${result.step3.length}장` },
     { key: 4, title: '④ 갇힌', value: `${result.step4Numbers.length}개` },
   ];
 
@@ -143,10 +147,8 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
   const trapNumbers = step === 2 ? result.step2Numbers : result.step4Numbers;
   const newTraps = newTrapNumbers(list);
 
-  // 갇힌 번호 단계는 갇힌 번호가 있는 복권만, 골라 보기 적용
-  const visible = list
-    .filter((s) => !showTraps || s.traps.length > 0)
-    .filter((s) => numberFilter === null || s.traps.some((t) => t.number === numberFilter));
+  // 갇힌 번호로 골라 보기
+  const visible = list.filter((s) => numberFilter === null || hasNumber(s, numberFilter));
 
   return (
     <div className="flex flex-col gap-3 pb-4">
@@ -159,9 +161,9 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
         ))}
       </div>
 
-      {/* 💡 최소 연결 개수 */}
+      {/* 💡 최소 벽 개수 */}
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] font-bold text-gray-500 dark:text-zinc-400 mr-1">최소 연결</span>
+        <span className="text-[11px] font-bold text-gray-500 dark:text-zinc-400 mr-1">최소 벽</span>
         {MIN_OPTIONS.map((m) => (
           <button key={m} onClick={() => setMinLen(m)} className={`${chipBase} ${minLen === m ? chipOn : chipOff}`}>
             {m}개
@@ -197,13 +199,13 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
 
       {/* 💡 단계 설명 */}
       <p className="text-[11px] text-gray-500 dark:text-zinc-400 leading-relaxed break-keep">
-        {step === 1 && '끝자리가 같은 번호가 맞닿거나 한 칸 떨어져 이어진 복권입니다. (가로·세로·대각선)'}
-        {step === 2 && '연결된 번호가 양쪽에서 막고 있는 갇힌 번호입니다. 번호를 누르면 그 번호가 나온 복권만 보여줘요.'}
+        {step === 1 && '끝자리가 같은 번호가 벽처럼 이어져 한 구역을 막은 복권입니다. 주황 테두리는 열린 칸(1개까지 닫힌 것으로 봄)이에요.'}
+        {step === 2 && '벽이 막은 구역 안의 번호가 갇힌 번호입니다. 번호를 누르면 그 번호가 나온 복권만 보여줘요.'}
         {step === 3 &&
           (result.step3Digits.size > 0
-            ? `②의 갇힌 번호 끝자리 ${Array.from(result.step3Digits.keys()).sort((a, b) => a - b).join(', ')}(으)로 연결된 복권입니다.`
+            ? `②의 갇힌 번호 끝자리 ${Array.from(result.step3Digits.keys()).sort((a, b) => a - b).join(', ')}(으)로 벽이 만들어진 복권입니다.`
             : '②에서 갇힌 번호가 나오지 않아 찾을 끝자리가 없습니다.')}
-        {step === 4 && '③의 연결 안에 갇힌 최종 번호입니다.'}
+        {step === 4 && '③의 벽이 막은 구역 안의 최종 갇힌 번호입니다.'}
       </p>
 
       {/* 💡 갇힌 번호 모음 (②, ④) */}
@@ -215,7 +217,7 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
           <div className="flex flex-wrap gap-1.5">
             <button onClick={() => setNumberFilter(null)} className={`${chipBase} py-1 ${numberFilter === null ? chipOn : chipOff}`}>전체</button>
             {trapNumbers.map((n) => {
-              const cnt = list.filter((s) => s.traps.some((t) => t.number === n)).length;
+              const cnt = list.filter((s) => hasNumber(s, n)).length;
               return (
                 <button
                   key={n}
@@ -239,9 +241,11 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
           <p className="text-[11px] break-keep">복권이 더 등록되면 자동으로 다시 분석돼요.</p>
         </div>
       ) : (
-        visible.map(({ ticket, chains, traps }) => {
+        visible.map(({ ticket, enclosures }) => {
           const trShort = ticket.tr ? `TR …${ticket.tr.slice(0, 10).slice(-4)}` : '직접 입력';
-          const shownTraps = numberFilter === null ? traps : traps.filter((t) => t.number === numberFilter);
+          // 번호로 골라 볼 때는 그 번호가 갇힌 구역만 표시
+          const shown = numberFilter === null ? enclosures : enclosures.filter((e) => e.cells.some((c) => c.number === numberFilter));
+          const trappedCount = shown.reduce((sum, e) => sum + e.cells.length, 0);
           return (
             <div key={ticket.id} className="bg-gray-50 dark:bg-zinc-800/60 border border-gray-200 dark:border-zinc-700/50 rounded-2xl p-3 flex flex-col gap-2.5">
               <div className="flex justify-between items-center">
@@ -250,43 +254,48 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
                   {isNew(ticket) && <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[9px] font-black">NEW</span>}
                 </span>
                 <span className="text-[11px] font-bold text-amber-500">
-                  {showTraps ? `갇힌 ${traps.length}개` : `연결 ${chains.length}개`}
+                  {showTraps ? `갇힌 ${trappedCount}개` : `벽 ${shown.length}개`}
                 </span>
               </div>
 
-              <ConnectGrid ticket={ticket} chains={chains} traps={showTraps ? shownTraps : []} phase={isEarly ? 'early' : 'late'} />
+              <ConnectGrid ticket={ticket} enclosures={shown} showTrapped={showTraps} phase={isEarly ? 'early' : 'late'} />
 
-              <div className="flex flex-col gap-1 text-[12px]">
-                {/* 연결 설명 */}
-                {chains.map((ch, i) => (
-                  <div key={`c${i}`} className="flex items-center gap-2">
-                    <span className={`w-3 h-3 rounded-sm shrink-0 ${isEarly ? 'bg-[#1E3A8A]' : 'bg-violet-600'}`} />
-                    <span className="font-bold text-gray-900 dark:text-zinc-100">
-                      끝수 {ch.digit} · {ch.cells.length}개
-                    </span>
-                    <span className="text-[11px] text-gray-500 dark:text-zinc-400 truncate">
-                      ({ch.cells.map((p) => pad2(p.number)).join('·')})
-                    </span>
-                    {!isEarly && (
-                      <span className="ml-auto text-[10px] text-violet-600 dark:text-violet-400 font-bold shrink-0">
-                        ← 갇힌 {(result.step3Digits.get(ch.digit) || []).map(pad2).join('·')}
-                      </span>
+              <div className="flex flex-col gap-2 text-[12px]">
+                {shown.map((e, i) => (
+                  <div key={i} className="flex flex-col gap-0.5">
+                    {/* 벽 설명 */}
+                    <div className="flex items-center gap-2">
+                      <span className={`w-3 h-3 rounded-sm shrink-0 ${isEarly ? 'bg-[#1E3A8A]' : 'bg-violet-600'}`} />
+                      <span className="font-bold text-gray-900 dark:text-zinc-100 shrink-0">끝수 {e.digit} 벽 {e.walls.length}개</span>
+                      <span className="text-[11px] text-gray-500 dark:text-zinc-400 truncate">({e.walls.map((p) => pad2(p.number)).join('·')})</span>
+                      {!isEarly && (
+                        <span className="ml-auto text-[10px] text-violet-600 dark:text-violet-400 font-bold shrink-0">
+                          ← 갇힌 {(result.step3Digits.get(e.digit) || []).map(pad2).join('·')}
+                        </span>
+                      )}
+                    </div>
+                    {/* 열린 칸 */}
+                    <div className="flex items-center gap-2 pl-5 text-[11px] text-gray-500 dark:text-zinc-400">
+                      {e.gap ? (
+                        <>
+                          <span className="w-3 h-3 rounded-sm shrink-0 ring-2 ring-inset ring-orange-500" />
+                          열린 칸 {cellName(e.gap.row, e.gap.col)} · {pad2(e.gap.number)}
+                        </>
+                      ) : (
+                        '끊김 없이 막힘'
+                      )}
+                    </div>
+                    {/* 갇힌 번호 */}
+                    {showTraps && (
+                      <div className="flex items-center gap-2 pl-5">
+                        <span className={`w-3 h-3 rounded-sm shrink-0 ${step === 2 ? 'bg-yellow-300' : 'bg-red-400'}`} />
+                        <span className="font-bold text-gray-900 dark:text-zinc-100">
+                          갇힌 {e.cells.length}개: {e.cells.map((p) => pad2(p.number)).join('·')}
+                        </span>
+                      </div>
                     )}
                   </div>
                 ))}
-                {/* 갇힌 번호 설명 */}
-                {showTraps &&
-                  shownTraps.map((t) => (
-                    <div key={`t${t.row}-${t.col}`} className="flex items-center gap-2">
-                      <span className={`w-3 h-3 rounded-sm shrink-0 ${step === 2 ? 'bg-yellow-300' : 'bg-red-400'}`} />
-                      <span className="font-bold text-gray-900 dark:text-zinc-100">
-                        {cellName(t.row, t.col)} · {pad2(t.number)}
-                      </span>
-                      <span className="text-[11px] text-gray-500 dark:text-zinc-400">
-                        끝수 {t.digits.join('·')} 연결 사이 ({t.dirs.join(', ')})
-                      </span>
-                    </div>
-                  ))}
               </div>
             </div>
           );
