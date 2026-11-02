@@ -52,16 +52,11 @@ const splitRegions = (R: number, C: number, wall: Set<string>): string[][] => {
 
 /**
  * 💡 열린 칸이 될 수 있는 자리인지 확인
- * 같은 끝수 번호와 같은 끝수 번호 사이(한 칸), 또는 같은 끝수 번호와 표 끝 사이에 끼어 있는 칸
+ * 같은 끝수 번호 두 개 사이에 끼어 있는 한 칸만 인정 (가로·세로·대각선, 예: 24·27·34)
+ * 벽과 표 끝 사이의 빈자리는 열린 칸이 아님
  */
-const isGapCandidate = (R: number, C: number, walls: Set<string>, r: number, c: number) =>
-  N8.some(([dy, dx]) => {
-    const a = key(r - dy, c - dx);
-    const by = r + dy;
-    const bx = c + dx;
-    const outside = by < 0 || by >= R || bx < 0 || bx >= C;
-    return walls.has(a) && (outside || walls.has(key(by, bx)));
-  });
+const isGapCandidate = (walls: Set<string>, r: number, c: number) =>
+  N8.some(([dy, dx]) => walls.has(key(r - dy, c - dx)) && walls.has(key(r + dy, c + dx)));
 
 /**
  * 💡 한 끝수(digit)로 막힌 구역 찾기
@@ -123,7 +118,7 @@ export const findEnclosures = (grid: Grid, digit: number, minWall: number): Encl
     for (let c = 0; c < C; c++) {
       const k = key(r, c);
       if (walls.has(k) || grid[r][c] === null || closedArea.has(k)) continue;
-      if (!isGapCandidate(R, C, walls, r, c)) continue;
+      if (!isGapCandidate(walls, r, c)) continue;
       enclosedBy(new Set([...walls, k])).forEach((e) => {
         if (Array.from(e.area).some((a) => closedArea.has(a))) return;
         candidates.push({ ...e, gap: k });
