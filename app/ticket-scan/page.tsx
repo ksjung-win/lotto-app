@@ -2,11 +2,12 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Home, Download, Ticket, Search, Waypoints } from 'lucide-react';
+import { Home, Download, Ticket, Search, Waypoints, Settings } from 'lucide-react';
 import InputTab from './InputTab';
 import TicketListTab from './TicketListTab';
 import PatternTab from './PatternTab';
 import ConnectTab from './ConnectTab';
+import SettingsModal from './SettingsModal';
 
 type TabKey = 'input' | 'list' | 'pattern' | 'connect';
 
@@ -20,6 +21,7 @@ const TABS: { key: TabKey; label: string; icon: typeof Home }[] = [
 export default function TicketScanPage() {
   const [tab, setTab] = useState<TabKey>('input');
   const [isMounted, setIsMounted] = useState(false);
+  const [showSettings, setShowSettings] = useState(false); // 💡 설정 창 (제미나이 API 키)
 
   // 휴대폰에 저장된 복권 데이터를 불러온 뒤에 화면을 그림
   useEffect(() => {
@@ -38,7 +40,10 @@ export default function TicketScanPage() {
           <h1 className="text-[16px] font-black bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent tracking-tight">
             복권 패턴 분석
           </h1>
-          <div className="w-9" />
+          {/* 💡 설정 버튼 (제미나이 API 키) */}
+          <button onClick={() => setShowSettings(true)} className="p-2 -mr-2 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-zinc-400 transition-colors">
+            <Settings size={20} />
+          </button>
         </header>
 
         {/* 💡 탭 4개 */}
@@ -66,6 +71,8 @@ export default function TicketScanPage() {
           {isMounted && tab === 'pattern' && <PatternTab onGoToInput={() => setTab('input')} />}
           {isMounted && tab === 'connect' && <ConnectTab onGoToInput={() => setTab('input')} />}
         </div>
+
+        {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       </div>
     </div>
   );

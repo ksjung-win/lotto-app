@@ -13,7 +13,7 @@ export type Ticket = {
   round: number;            // 추첨 회차 (예: 1248)
   tr: string | null;        // 복권 고유번호(TR). 직접 입력한 복권은 null
   games: LottoGame[];       // A~E 게임 (최대 5개)
-  source: 'qr' | 'manual';  // QR로 읽었는지, 직접 입력했는지
+  source: 'qr' | 'manual' | 'ai';  // QR로 읽었는지, 직접 입력했는지, AI(제미나이)로 읽었는지
   createdAt: number;        // 등록 시각
 };
 
@@ -35,9 +35,11 @@ export const useTicketStore = create<TicketStore>()(
       tickets: [],
 
       addTicket: (data) => {
+        // 같은 회차에서 TR번호(앞 10자리)가 같거나, TR이 없으면 번호가 모두 같으면 중복
+        const trKey = (tr: string | null) => (tr ? tr.slice(0, 10) : '');
         const exists = get().tickets.some((t) =>
           t.round === data.round &&
-          (data.tr ? t.tr === data.tr : gamesKey(t.games) === gamesKey(data.games))
+          (data.tr && t.tr ? trKey(t.tr) === trKey(data.tr) : gamesKey(t.games) === gamesKey(data.games))
         );
         if (exists) return 'duplicate';
 

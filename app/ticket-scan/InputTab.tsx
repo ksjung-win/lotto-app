@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Camera, Images, PenLine, X, CheckCircle2, AlertTriangle, XCircle, Loader2 } from 'lucide-react';
+import { Camera, Images, PenLine, X, CheckCircle2, AlertTriangle, XCircle, Loader2, Sparkles } from 'lucide-react';
 import { useTicketStore, LottoGame } from '../store/useTicketStore';
 import { readTicketFromFile } from '../lib/lottoQr';
+import { readTicketWithGemini, getGeminiKey, AiTicket } from '../lib/geminiReader';
 import { getLatestDrawNo } from '../store/useRoundStore';
 import { getBallColor, pad2 } from '../lib/endDigitPattern';
 
@@ -12,10 +13,11 @@ const GAME_LABELS = ['A', 'B', 'C', 'D', 'E'];
 
 type ResultItem = {
   key: string;
-  status: 'ok' | 'dup' | 'fail';
+  status: 'ok' | 'dup' | 'fail' | 'review'; // review = AI가 읽음, 확인 후 등록 필요
   title: string;
   detail: string;
-  previewUrl?: string; // 실패한 사진만 미리보기 보관
+  previewUrl?: string; // 실패했거나 확인이 필요한 사진만 미리보기 보관
+  ai?: AiTicket;       // 제미나이가 읽은 내용
 };
 
 export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
@@ -36,6 +38,11 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
   const [manualRound, setManualRound] = useState('');
   const [manualGames, setManualGames] = useState<number[][]>([[], [], [], [], []]);
   const [activeGame, setActiveGame] = useState(0);
+  // 💡 AI가 읽은 복권을 확인할 때 쓰는 값
+  const [manualTr, setManualTr] = useState('');
+  const [manualSource, setManualSource] = useState<'manual' | 'ai'>('manual');
+  const [manualWarnings, setManualWarnings] = useState<string[]>([]);
+  const [previewBig, setPreviewBig] = useState(false); // 사진 크게 보기
 
   // 💡 사진 여러 장 판독
   const processFiles = async (fileList: FileList | null) => {
@@ -57,12 +64,33 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
         console.error('판독 오류:', e);
       }
 
-      if (!parsed) {
+      if (!parsed && getGeminiKey()) {
+        // 💡 QR이 없으면 제미나이 AI로 읽기 → 확인 화면에서 확인 후 등록
+        try {
+          const ai = await readTicketWithGemini(file);
+          newResults.push({
+            key,
+            status: 'review',
+            title: `사진 ${i + 1}: AI로 읽음${ai.round ? ` · ${ai.round}회` : ''}`,
+            detail: ai.warnings.length > 0 ? `확인 필요: ${ai.warnings.join(' ')}` : '번호가 맞는지 확인한 뒤 등록해 주세요.',
+            previewUrl: URL.createObjectURL(file),
+            ai,
+          });
+        } catch (e) {
+          newResults.push({
+            key,
+            status: 'fail',
+            title: `사진 ${i + 1}: QR 없음 · AI 읽기 실패`,
+            detail: e instanceof Error ? e.message : 'AI로 읽지 못했습니다. 직접 입력해 주세요.',
+            previewUrl: URL.createObjectURL(file),
+          });
+        }
+      } else if (!parsed) {
         newResults.push({
           key,
           status: 'fail',
           title: `사진 ${i + 1}: QR 인식 실패`,
-          detail: 'QR코드가 선명하게 나오도록 다시 찍거나, 직접 입력해 주세요.',
+          detail: 'QR코드가 없거나 흐려요. 위쪽 ⚙ 설정에서 제미나이 키를 넣으면 AI로 읽을 수 있어요. 지금은 다시 찍거나 직접 입력해 주세요.',
           previewUrl: URL.createObjectURL(file),
         });
       } else {
@@ -82,15 +110,25 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     setIsProcessing(false);
     if (cameraInputRef.current) cameraInputRef.current.value = '';
     if (galleryInputRef.current) galleryInputRef.current.value = '';
+
+    // 💡 AI가 읽은 사진이 있으면 첫 번째 확인 화면을 바로 열기
+    const firstReview = newResults.find((r) => r.status === 'review');
+    if (firstReview) openManual(firstReview.previewUrl, firstReview.key, firstReview.ai);
   };
 
-  // 💡 직접 입력 팝업 열기
-  const openManual = (previewUrl?: string, failKey?: string) => {
+  // 💡 직접 입력 팝업 열기 (ai가 있으면 AI가 읽은 번호를 채워서 '확인 화면'으로 열기)
+  const openManual = (previewUrl?: string, failKey?: string, ai?: AiTicket) => {
     setManualPreview(previewUrl);
     setManualFailKey(failKey ?? null);
-    setManualRound(String(getLatestDrawNo() + 1)); // 이번 주 추첨 회차
-    setManualGames([[], [], [], [], []]);
-    setActiveGame(0);
+    setManualRound(String(ai?.round ?? getLatestDrawNo() + 1)); // AI가 읽은 회차, 없으면 이번 주 회차
+    const rows = [0, 1, 2, 3, 4].map((i) => [...(ai?.rows[i] || [])]);
+    setManualGames(rows);
+    const firstIncomplete = rows.findIndex((r) => r.length > 0 && r.length < 6);
+    setActiveGame(firstIncomplete === -1 ? 0 : firstIncomplete);
+    setManualTr(ai?.tr || '');
+    setManualSource(ai ? 'ai' : 'manual');
+    setManualWarnings(ai?.warnings || []);
+    setPreviewBig(!!ai); // AI 확인 화면은 사진을 크게 보여주며 시작
     setIsManualOpen(true);
   };
 
@@ -127,28 +165,34 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
       return;
     }
     const games: LottoGame[] = filled.map((numbers, i) => ({ label: GAME_LABELS[i], numbers }));
-    const res = addTicket({ round, tr: null, games, source: 'manual' });
+    const tr = manualTr.replace(/\D/g, '') || null;
+    const res = addTicket({ round, tr, games, source: manualSource });
     if (res === 'duplicate') {
-      alert('같은 회차에 똑같은 번호의 복권이 이미 등록되어 있습니다.');
+      alert(tr ? `${round}회에 같은 TR번호의 복권이 이미 등록되어 있습니다.` : '같은 회차에 똑같은 번호의 복권이 이미 등록되어 있습니다.');
       return;
     }
 
     const newItem: ResultItem = {
       key: `manual_${Date.now()}`,
       status: 'ok',
-      title: `${round}회 · 직접 입력`,
+      title: `${round}회 · ${tr ? `TR …${tr.slice(0, 10).slice(-4)}` : '직접 입력'}${manualSource === 'ai' ? ' (AI)' : ''}`,
       detail: `${games.length}게임 등록 완료`,
     };
-    // 실패했던 사진을 직접 입력으로 해결했다면 그 줄을 '등록 완료'로 바꿈
+    // 실패했던(또는 확인 대기) 사진을 해결했다면 그 줄을 '등록 완료'로 바꿈
     setResults((prev) =>
       manualFailKey ? prev.map((r) => (r.key === manualFailKey ? newItem : r)) : [...prev, newItem]
     );
     setIsManualOpen(false);
+
+    // 💡 확인할 AI 사진이 더 있으면 다음 확인 화면을 이어서 열기
+    const next = results.find((r) => r.status === 'review' && r.key !== manualFailKey);
+    if (next) setTimeout(() => openManual(next.previewUrl, next.key, next.ai), 50);
   };
 
   const okCount = results.filter((r) => r.status === 'ok').length;
   const dupCount = results.filter((r) => r.status === 'dup').length;
   const failCount = results.filter((r) => r.status === 'fail').length;
+  const reviewCount = results.filter((r) => r.status === 'review').length;
 
   return (
     <div className="flex flex-col gap-3 pb-4">
@@ -212,6 +256,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
             <div className="flex justify-between items-center mt-2.5">
               <span className="text-[11px] text-gray-500 dark:text-zinc-400">
                 등록 <b className="text-emerald-500">{okCount}</b> · 중복 <b className="text-amber-500">{dupCount}</b> · 실패 <b className="text-red-500">{failCount}</b>
+                {reviewCount > 0 && <> · 확인 대기 <b className="text-blue-500">{reviewCount}</b></>}
               </span>
               {okCount > 0 && (
                 <button onClick={onGoToList} className="text-[11px] font-bold text-amber-600 dark:text-amber-500 underline underline-offset-2">
@@ -233,15 +278,23 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
                 ? 'border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10'
                 : r.status === 'dup'
                 ? 'border-amber-500/30 bg-amber-50 dark:bg-amber-500/10'
+                : r.status === 'review'
+                ? 'border-blue-500/30 bg-blue-50 dark:bg-blue-500/10'
                 : 'border-red-500/30 bg-red-50 dark:bg-red-500/10'
             }`}
           >
             {r.status === 'ok' && <CheckCircle2 size={18} className="text-emerald-500 shrink-0 mt-0.5" />}
             {r.status === 'dup' && <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />}
             {r.status === 'fail' && <XCircle size={18} className="text-red-500 shrink-0 mt-0.5" />}
+            {r.status === 'review' && <Sparkles size={18} className="text-blue-500 shrink-0 mt-0.5" />}
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-bold text-gray-900 dark:text-zinc-100">{r.title}</div>
               <div className="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5 break-keep">{r.detail}</div>
+              {r.status === 'review' && (
+                <button onClick={() => openManual(r.previewUrl, r.key, r.ai)} className="mt-2 px-2.5 py-1.5 rounded-lg bg-blue-500 text-white text-[11px] font-bold">
+                  확인하고 등록
+                </button>
+              )}
               {r.status === 'fail' && (
                 <div className="flex gap-1.5 mt-2">
                   <button onClick={() => cameraInputRef.current?.click()} className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 text-[11px] font-bold text-gray-700 dark:text-zinc-300">
@@ -253,7 +306,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
                 </div>
               )}
             </div>
-            {r.previewUrl && r.status === 'fail' && (
+            {r.previewUrl && (r.status === 'fail' || r.status === 'review') && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={r.previewUrl} alt="실패한 사진" className="w-12 h-16 object-cover rounded-md shrink-0" />
             )}
@@ -266,7 +319,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
         <div className="absolute inset-0 bg-black/60 z-50 flex items-center justify-center p-3 backdrop-blur-sm">
           <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-[360px] max-h-full overflow-y-auto flex flex-col">
             <div className="bg-gray-50 dark:bg-zinc-800 p-3 border-b dark:border-zinc-700 flex justify-between items-center sticky top-0 z-10">
-              <h3 className="font-bold text-gray-800 dark:text-zinc-200 ml-1 text-sm">복권 직접 입력</h3>
+              <h3 className="font-bold text-gray-800 dark:text-zinc-200 ml-1 text-sm">{manualSource === 'ai' ? 'AI가 읽은 번호 확인' : '복권 직접 입력'}</h3>
               <button onClick={() => setIsManualOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-zinc-700">
                 <X size={18} className="text-gray-600 dark:text-zinc-300" />
               </button>
@@ -275,7 +328,20 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
             <div className="p-3 flex flex-col gap-3">
               {manualPreview && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={manualPreview} alt="복권 사진" className="w-full max-h-32 object-contain rounded-lg bg-gray-100 dark:bg-zinc-800" />
+                <img
+                  src={manualPreview}
+                  alt="복권 사진"
+                  onClick={() => setPreviewBig(!previewBig)}
+                  className={`w-full object-contain rounded-lg bg-gray-100 dark:bg-zinc-800 cursor-zoom-in ${previewBig ? 'max-h-[60vh]' : 'max-h-40'}`}
+                />
+              )}
+
+              {/* 💡 AI가 읽은 경우 안내 */}
+              {manualSource === 'ai' && (
+                <div className="rounded-lg p-2.5 bg-blue-50 dark:bg-blue-500/10 text-[11px] text-blue-700 dark:text-blue-300 leading-relaxed break-keep">
+                  사진을 누르면 크게/작게 볼 수 있어요. 사진과 비교해 번호가 맞는지 확인해 주세요. 틀린 번호는 아래 번호판에서 <b>눌러서 빼고</b>, 맞는 번호를 <b>눌러서 넣으면</b> 돼요.
+                  {manualWarnings.length > 0 && <div className="mt-1 font-bold text-red-500">⚠️ {manualWarnings.join(' ')}</div>}
+                </div>
               )}
 
               <div className="flex items-center gap-2">
@@ -288,6 +354,20 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
                   className="flex-1 border border-gray-300 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white rounded-lg px-3 py-2 text-center text-sm font-bold outline-none focus:border-amber-500"
                 />
               </div>
+
+              {manualSource === 'ai' && (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-bold text-gray-700 dark:text-zinc-300 shrink-0 w-[52px]">TR번호</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={manualTr}
+                    onChange={(e) => setManualTr(e.target.value)}
+                    placeholder="중복 확인용 (없으면 비워 두기)"
+                    className="flex-1 border border-gray-300 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white rounded-lg px-3 py-2 text-center text-sm font-bold outline-none focus:border-amber-500"
+                  />
+                </div>
+              )}
 
               {/* A~E 게임 줄 (누르면 그 게임을 입력) */}
               <div className="flex flex-col gap-1">
@@ -348,7 +428,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
                   onClick={saveManual}
                   className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold active:scale-95 transition-all shadow-md"
                 >
-                  등록하기
+                  {manualSource === 'ai' ? '확인 완료 · 등록' : '등록하기'}
                 </button>
               </div>
             </div>

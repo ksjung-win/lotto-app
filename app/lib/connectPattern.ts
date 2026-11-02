@@ -54,62 +54,105 @@ const splitRegions = (R: number, C: number, wall: Set<string>): string[][] => {
  * 💡 한 끝수(digit)로 막힌 구역 찾기
  * 1) 같은 끝수 번호를 벽으로 놓고, 표가 둘 이상으로 나뉘면 가장 큰 구역을 뺀 나머지가 '막힌 구역'
  * 2) 끝자리가 다른 번호가 하나라도 끼어 끊긴 벽은 제외 (완전히 막힌 것만 인정)
- * 3) 구역을 막는 같은 끝수 번호가 minWall개 이상이어야 함
+ * 3) 벽은 '이어진 벽 전체'로 셈: 같은 벽이 막은 구역들은 하나로 묶어서 보여줌
+ * 4) 이어진 벽(같은 끝수 번호)이 minWall개 이상이어야 함
+ * 5) off: 사용자가 '선택 해제'한 칸("행,열") → 벽에서 빼고 일반 칸으로 계산
+ * 6) add: 사용자가 '직접 연결'한 칸("행,열" → 끝수) → 그 끝수의 벽으로 계산
  */
-export const findEnclosures = (grid: Grid, digit: number, minWall: number): Enclosure[] => {
+export const findEnclosures = (grid: Grid, digit: number, minWall: number, off?: Set<string>, add?: Record<string, number>): Enclosure[] => {
   const R = grid.length;
   const C = grid[0].length;
   const walls = new Set<string>();
   for (let r = 0; r < R; r++)
     for (let c = 0; c < C; c++) {
       const n = grid[r][c];
-      if (n !== null && n % 10 === digit) walls.add(key(r, c));
+      if (n === null) continue;
+      const k = key(r, c);
+      const added = add?.[k];
+      // 직접 연결한 칸은 고른 끝수의 벽으로만, 나머지는 끝수가 같고 선택 해제하지 않은 칸만 벽
+      const isWall = added !== undefined ? added === digit : n % 10 === digit && !off?.has(k);
+      if (isWall) walls.add(k);
     }
 
   const toCell = (k: string): GridCell => {
     const [r, c] = k.split(',').map(Number);
     return { row: r, col: c, number: grid[r][c] as number };
   };
+  const sortCells = (list: GridCell[]) => list.sort((p, q) => p.row - q.row || p.col - q.col);
 
-  // 벽 배치에서 막힌 구역 목록 계산
-  const enclosedBy = (wallSet: Set<string>) => {
-    const regions = splitRegions(R, C, wallSet).sort((a, b) => b.length - a.length);
-    const result: { area: Set<string>; walls: string[]; cells: string[] }[] = [];
-    regions.slice(1).forEach((region) => {
-      const cells = region.filter((k) => grid[Number(k.split(',')[0])][Number(k.split(',')[1])] !== null);
-      const border = new Set<string>();
+  // ① 벽 번호들을 가로·세로·대각선으로 이어서 '이어진 벽' 묶음으로 나눔
+  const wallGroupOf = new Map<string, number>();
+  const wallGroups: string[][] = [];
+  walls.forEach((start) => {
+    if (wallGroupOf.has(start)) return;
+    const id = wallGroups.length;
+    const group: string[] = [];
+    const stack = [start];
+    wallGroupOf.set(start, id);
+    while (stack.length > 0) {
+      const k = stack.pop()!;
+      group.push(k);
+      const [r, c] = k.split(',').map(Number);
+      N8.forEach(([dy, dx]) => {
+        const nk = key(r + dy, c + dx);
+        if (walls.has(nk) && !wallGroupOf.has(nk)) {
+          wallGroupOf.set(nk, id);
+          stack.push(nk);
+        }
+      });
+    }
+    wallGroups.push(group);
+  });
+
+  // ② 벽이 아닌 칸을 구역으로 나누고, 가장 큰 구역을 뺀 나머지 = 막힌 구역
+  const pockets = splitRegions(R, C, walls)
+    .sort((a, b) => b.length - a.length)
+    .slice(1)
+    .map((region) => {
+      const touched = new Set<number>(); // 이 구역을 막고 있는 '이어진 벽' 번호
       region.forEach((k) => {
         const [r, c] = k.split(',').map(Number);
         N8.forEach(([dy, dx]) => {
-          const nk = key(r + dy, c + dx);
-          if (walls.has(nk)) border.add(nk);
+          const g = wallGroupOf.get(key(r + dy, c + dx));
+          if (g !== undefined) touched.add(g);
         });
       });
-      if (cells.length > 0 && border.size >= minWall) {
-        result.push({ area: new Set(region), walls: Array.from(border), cells });
-      }
+      const cells = region.filter((k) => grid[Number(k.split(',')[0])][Number(k.split(',')[1])] !== null);
+      return { touched, cells };
+    })
+    .filter((p) => p.cells.length > 0);
+
+  // ③ 같은 벽을 공유하는 막힌 구역들을 하나로 묶기
+  const merged: { groups: Set<number>; cells: string[] }[] = [];
+  pockets.forEach((p) => {
+    const hits = merged.filter((m) => Array.from(p.touched).some((g) => m.groups.has(g)));
+    const into = { groups: new Set(p.touched), cells: [...p.cells] };
+    hits.forEach((h) => {
+      h.groups.forEach((g) => into.groups.add(g));
+      into.cells.push(...h.cells);
+      merged.splice(merged.indexOf(h), 1);
     });
-    return result;
-  };
+    merged.push(into);
+  });
 
-  const sortCells = (list: GridCell[]) => list.sort((p, q) => p.row - q.row || p.col - q.col);
-
-  // 끊김 없이 완전히 막힌 구역만
-  return enclosedBy(walls).map((e) => ({
-    digit,
-    walls: sortCells(e.walls.map(toCell)),
-    gap: null,
-    cells: sortCells(e.cells.map(toCell)),
-  }));
+  // ④ 이어진 벽 전체 개수가 minWall 이상인 것만
+  return merged
+    .map((m) => ({
+      digit,
+      walls: sortCells(Array.from(m.groups).flatMap((g) => wallGroups[g]).map(toCell)),
+      gap: null,
+      cells: sortCells(m.cells.map(toCell)),
+    }))
+    .filter((e) => e.walls.length >= minWall);
 };
 
 // 복권 1장의 모든 막힌 구역 (digits를 주면 그 끝수만)
-export const analyzeTicket = (ticket: Ticket, minWall: number, digits?: Set<number>): Enclosure[] => {
+export const analyzeTicket = (ticket: Ticket, minWall: number, digits?: Set<number>, off?: Set<string>, add?: Record<string, number>): Enclosure[] => {
   const grid = ticketToGrid(ticket);
   const result: Enclosure[] = [];
   for (let d = 0; d <= 9; d++) {
     if (digits && !digits.has(d)) continue;
-    result.push(...findEnclosures(grid, d, minWall));
+    result.push(...findEnclosures(grid, d, minWall, off, add));
   }
   return result;
 };
@@ -131,10 +174,15 @@ const uniqueNumbers = (list: TicketResult[]) =>
  * 💡 1~4단계 한 번에 계산 (회차의 모든 복권 기준)
  * 복권이 새로 등록될 때마다 다시 계산되므로, 월~토 추가 복권이 자동으로 반영됨
  */
-export const runFourSteps = (tickets: Ticket[], minWall: number): FourStepResult => {
+export type OffMap = Record<string, string[]>;                 // 복권 id → 선택 해제한 칸 목록 ("행,열")
+export type AddMap = Record<string, Record<string, number>>;   // 복권 id → 직접 연결한 칸 ("행,열" → 끝수)
+
+export const runFourSteps = (tickets: Ticket[], minWall: number, offMap: OffMap = {}, addMap: AddMap = {}): FourStepResult => {
+  const offOf = (t: Ticket) => new Set(offMap[t.id] || []);
+  const addOf = (t: Ticket) => addMap[t.id] || {};
   const step1: TicketResult[] = [];
   tickets.forEach((ticket) => {
-    const enclosures = analyzeTicket(ticket, minWall);
+    const enclosures = analyzeTicket(ticket, minWall, undefined, offOf(ticket), addOf(ticket));
     if (enclosures.length > 0) step1.push({ ticket, enclosures });
   });
   const step2Numbers = uniqueNumbers(step1);
@@ -148,7 +196,7 @@ export const runFourSteps = (tickets: Ticket[], minWall: number): FourStepResult
   const digits = new Set(step3Digits.keys());
   const step3: TicketResult[] = [];
   tickets.forEach((ticket) => {
-    const enclosures = analyzeTicket(ticket, minWall, digits);
+    const enclosures = analyzeTicket(ticket, minWall, digits, offOf(ticket), addOf(ticket));
     if (enclosures.length > 0) step3.push({ ticket, enclosures });
   });
   const step4Numbers = uniqueNumbers(step3);

@@ -106,7 +106,7 @@ export default function TicketListTab({ onGoToInput }: { onGoToInput: () => void
                   {idx + 1}. {trShort}
                 </div>
                 <div className="text-[10.5px] text-gray-500 dark:text-zinc-400">
-                  {t.source === 'qr' ? 'QR 등록' : '직접 입력'} · {formatTime(t.createdAt)} · {t.games.length}게임
+                  {t.source === 'qr' ? 'QR 등록' : t.source === 'ai' ? 'AI 읽기' : '직접 입력'} · {formatTime(t.createdAt)} · {t.games.length}게임
                 </div>
               </div>
               <div className="flex gap-1">
