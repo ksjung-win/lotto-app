@@ -4,11 +4,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Ticket as TicketIcon, Sparkles, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTicketStore, Ticket } from '../store/useTicketStore';
 import { pad2 } from '../lib/endDigitPattern';
-import { runConnectAnalysis, OffMap, AddMap, cleanOff, cleanAdd } from '../lib/connectPattern';
+import { runConnectAnalysis, recommendCombos, OffMap, AddMap, cleanOff, cleanAdd } from '../lib/connectPattern';
 import ConnectStep1 from './ConnectStep1';
-import { TicketsByDate, Summary1, Summary2, Step2View, Step3View } from './ConnectViews';
+import { TicketsByDate, Step2View, Step3View, Step4View, Step5View } from './ConnectViews';
 
-type View = 'menu' | 'tickets' | 'sum1' | 'sum2' | 'step1' | 'step2' | 'step3';
+type View = 'menu' | 'tickets' | 'step1' | 'step2' | 'step3' | 'step4' | 'step5';
 const MIN_OPTIONS = [3, 4, 5, 6]; // 구역을 막는 같은 끝수 번호(벽)의 최소 개수
 
 // 회차별 '마지막으로 확인한 시각' (새로 추가된 복권 표시용, 이 휴대폰에만 저장)
@@ -78,11 +78,13 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
   const isNew = (t: Ticket) => lastSeen !== null && t.createdAt > lastSeen;
   const newCount = roundTickets.filter(isNew).length;
 
-  // 💡 1~3단계 계산 (등록 복권이 늘어나거나, 수정을 적용하면 다시 계산)
+  // 💡 1~4단계 계산 (등록 복권이 늘어나거나, 수정을 적용하면 다시 계산)
   const result = useMemo(
     () => runConnectAnalysis(roundTickets, minLen, appliedOff, appliedAdd),
     [roundTickets, minLen, appliedOff, appliedAdd]
   );
+  // 💡 5단계: 추천 조합 20세트
+  const combos = useMemo(() => recommendCombos(result, roundTickets).combos, [result, roundTickets]);
 
   const editCount =
     Object.values(appliedOff).reduce((sum, list) => sum + list.length, 0) +
@@ -129,14 +131,14 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
   const chipOff = 'bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-400 border-gray-200 dark:border-zinc-700';
 
   // 💡 메뉴 버튼
-  const top = result.step3[0];
+  const top = result.step4[0];
   const MENU: { key: View; label: string; desc: string }[] = [
     { key: 'tickets', label: '입력된 복권 보기', desc: `등록한 날짜별 · ${roundTickets.length}장` },
-    { key: 'sum1', label: '1단계 분석 요약 보기', desc: `복권 번호 | 연결 번호 | 갇힌 번호 · ${result.step1.length}장` },
-    { key: 'sum2', label: '2단계 분석 요약 보기', desc: `갇힌 복권 | 연결 번호 | 갇힌 번호 · ${result.step2.length}건` },
-    { key: 'step1', label: '1단계: 연결 패턴 보기', desc: `복권별 같은 끝자리 연결 · 수정 가능 · ${result.step1.length}장` },
-    { key: 'step2', label: '2단계: 갇힌 번호 보기', desc: `다른 복권의 연결 번호가 갇힘 · ${result.step2Numbers.length}개` },
-    { key: 'step3', label: '3단계: 갇힌 중복 번호 보기', desc: top ? `가장 많이: ${pad2(top.number)}번 / ${top.count}장` : '중복 번호 없음' },
+    { key: 'step1', label: '1단계: 연결 복권', desc: `같은 끝자리로 연결된 복권 · ${roundTickets.length}장 중 ${result.step1.length}장` },
+    { key: 'step2', label: '2단계: 갇힌 복권', desc: `다른 복권의 연결 번호를 가둔 복권 · ${result.step1.length}장 중 ${result.step2Tickets.length}장` },
+    { key: 'step3', label: '3단계: 갇힌 번호', desc: `1~45 번호판으로 보기 · ${result.step3.length}개` },
+    { key: 'step4', label: '4단계: 중복 순위', desc: top ? `가장 많이: ${pad2(top.number)}번 · ${top.count}장` : '갇힌 번호 없음' },
+    { key: 'step5', label: '5단계: 추천 번호', desc: combos.length > 0 ? `패턴 점수 순 6개 조합 · ${combos.length}세트` : '추천할 번호 부족' },
   ];
   const current = MENU.find((m) => m.key === view);
 
@@ -211,8 +213,6 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
           </div>
 
           {view === 'tickets' && <TicketsByDate roundTickets={roundTickets} ticketNo={ticketNo} isNew={isNew} />}
-          {view === 'sum1' && <Summary1 step1={result.step1} ticketNo={ticketNo} />}
-          {view === 'sum2' && <Summary2 step2={result.step2} ticketNo={ticketNo} />}
           {view === 'step1' && (
             <ConnectStep1
               key={`${selectedRound}-${JSON.stringify([appliedOff, appliedAdd])}`}
@@ -227,8 +227,10 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
               onDirtyChange={onDirtyChange}
             />
           )}
-          {view === 'step2' && <Step2View step2={result.step2} step2Numbers={result.step2Numbers} ticketNo={ticketNo} />}
-          {view === 'step3' && <Step3View step3={result.step3} ticketNo={ticketNo} />}
+          {view === 'step2' && <Step2View step2Tickets={result.step2Tickets} step1Count={result.step1.length} ticketNo={ticketNo} />}
+          {view === 'step3' && <Step3View key={selectedRound} step3={result.step3} step4={result.step4} ticketNo={ticketNo} />}
+          {view === 'step4' && <Step4View step4={result.step4} ticketNo={ticketNo} />}
+          {view === 'step5' && <Step5View combos={combos} step3={result.step3} />}
         </>
       )}
     </div>

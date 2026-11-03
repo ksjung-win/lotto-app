@@ -6,6 +6,7 @@ import { Ticket } from '../store/useTicketStore';
 import { ticketToGrid } from '../lib/endDigitPattern';
 import { analyzeTicket, Enclosure, TicketResult, OffMap, AddMap, cleanOff, cleanAdd } from '../lib/connectPattern';
 import ConnectGrid, { ticketLabel, cellKey, numsText } from './ConnectGrid';
+import { Pager, SmallCard } from './ConnectViews';
 
 const DIGITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
@@ -28,6 +29,7 @@ export default function ConnectStep1({
   const [editId, setEditId] = useState<string | null>(null);       // 직접 연결 중인 복권
   const [editDigit, setEditDigit] = useState<number | null>(null); // 직접 연결할 끝수
   const [showAll, setShowAll] = useState(false);                   // 연결 없는 복권도 보기
+  const [page, setPage] = useState<{ mode: 'one' | 'six'; index: number }>({ mode: 'one', index: 0 }); // 1장씩 / 6장씩
 
   const isDirty =
     JSON.stringify(cleanOff(draftOff)) !== JSON.stringify(appliedOff) ||
@@ -78,10 +80,126 @@ export default function ConnectStep1({
   const list = [...step1, ...extra].sort((a, b) => (ticketNo.get(a.ticket.id) || 0) - (ticketNo.get(b.ticket.id) || 0));
   const hiddenCount = roundTickets.length - step1.length;
 
+  // 💡 복권 1장 카드 (1장씩 보기)
+  const renderCard = ({ ticket, enclosures }: TicketResult) => {
+    const editing = editId === ticket.id;
+    // 💡 선택 해제 전 원래 벽 중, 누르지 않은 번호는 화면에 그대로 유지 (분석에는 반영 안 됨)
+    const nowWalls = new Set(enclosures.flatMap((e) => e.walls.map(cellKey)));
+    const offNow = new Set(appliedOff[ticket.id] || []);
+    const keepWalls = offNow.size === 0
+      ? []
+      : analyzeTicket(ticket, minLen, undefined, undefined, appliedAdd[ticket.id])
+          .flatMap((e) => e.walls)
+          .filter((p) => !nowWalls.has(cellKey(p)) && !offNow.has(cellKey(p)));
+    const lostDigits = Array.from(new Set(keepWalls.map((p) => p.number % 10)))
+      .filter((d) => !enclosures.some((e) => e.digit === d))
+      .sort((a, b) => a - b);
+    // 해제한 칸이 이 복권 표 안의 번호인지 (안내 문구용)
+    const grid = ticketToGrid(ticket);
+    const offInTicket = [...offNow].some((k) => {
+      const [r, c] = k.split(',').map(Number);
+      return grid[r]?.[c] != null;
+    });
+
+    return (
+      <div
+        key={ticket.id}
+        className={`bg-gray-50 dark:bg-zinc-800/60 border rounded-2xl p-3 flex flex-col gap-2.5 ${
+          editing ? 'border-orange-400 ring-1 ring-orange-400' : 'border-gray-200 dark:border-zinc-700/50'
+        }`}
+      >
+        <div className="flex justify-between items-center gap-2">
+          <span className="text-[13px] font-black text-gray-900 dark:text-zinc-100 flex items-center gap-1.5">
+            {ticketLabel(ticket, ticketNo.get(ticket.id))}
+            {isNew(ticket) && <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[9px] font-black">NEW</span>}
+          </span>
+          <div className="flex items-center gap-1.5">
+            {enclosures.length === 0 ? (
+              <span className="px-1.5 py-0.5 rounded bg-gray-400 dark:bg-zinc-600 text-white text-[10px] font-black">연결 없음</span>
+            ) : (
+              <span className="text-[11px] font-bold text-amber-500">연결 {enclosures.length}개</span>
+            )}
+            <button
+              onClick={() => toggleEdit(ticket.id, enclosures)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10.5px] font-bold border ${
+                editing ? 'bg-orange-500 text-white border-orange-500' : 'bg-white dark:bg-zinc-900 text-orange-500 border-orange-400/60'
+              }`}
+            >
+              <PencilLine size={11} /> {editing ? '닫기' : '직접 연결'}
+            </button>
+          </div>
+        </div>
+
+        {/* 💡 직접 연결: 끝수 고르기 */}
+        {editing && (
+          <div className="rounded-xl bg-orange-50 dark:bg-orange-500/10 border border-orange-400/40 p-2.5 flex flex-col gap-2">
+            <div className="text-[11px] font-bold text-orange-700 dark:text-orange-300 break-keep">
+              ① 연결할 끝수를 고르고 → ② 벽으로 넣을 번호를 누르세요. 다시 누르면 취소돼요.
+            </div>
+            <div className="grid grid-cols-10 gap-1">
+              {DIGITS.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setEditDigit(d)}
+                  className={`py-1.5 rounded-md text-[12px] font-black border ${
+                    editDigit === d ? 'bg-orange-500 text-white border-orange-500' : 'bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border-gray-200 dark:border-zinc-700'
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <ConnectGrid
+          ticket={ticket}
+          walls={[...enclosures.flatMap((e) => e.walls), ...keepWalls]}
+          trapped={enclosures.flatMap((e) => e.cells)}
+          off={draftOff[ticket.id] || []}
+          add={draftAdd[ticket.id] || {}}
+          editing={editing}
+          editDigit={editDigit}
+          onTap={(k, isWall) => tapCell(ticket.id, k, isWall)}
+        />
+        {enclosures.length === 0 && offInTicket && (
+          <div className="text-[11px] text-gray-500 dark:text-zinc-400 break-keep">
+            선택 해제한 번호 때문에 벽이 열려 분석에서 빠졌어요. 점선 칸을 누르면 다시 선택돼요.
+          </div>
+        )}
+        {enclosures.length > 0 && lostDigits.length > 0 && (
+          <div className="text-[11px] text-gray-500 dark:text-zinc-400 break-keep">
+            끝수 {lostDigits.join(', ')}: 선택 해제로 벽이 열려 분석에서 빠졌어요. 점선 칸을 누르면 다시 선택돼요.
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2 text-[12px]">
+          {enclosures.map((e, i) => {
+            const addedHere = e.walls.filter((p) => appliedAdd[ticket.id]?.[cellKey(p)] !== undefined).length;
+            return (
+              <div key={i} className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-sm shrink-0 bg-[#1E3A8A]" />
+                  <span className="font-bold text-gray-900 dark:text-zinc-100 shrink-0">끝수 {e.digit} 연결 {e.walls.length}개</span>
+                  <span className="text-[11px] text-gray-500 dark:text-zinc-400 truncate">({numsText(e.walls)})</span>
+                  {addedHere > 0 && <span className="text-[10.5px] text-orange-500 font-bold shrink-0">직접 {addedHere}</span>}
+                </div>
+                <div className="flex items-center gap-2 pl-5">
+                  <span className="w-3 h-3 rounded-sm shrink-0 bg-yellow-300" />
+                  <span className="font-bold text-gray-900 dark:text-zinc-100">갇힌 {e.cells.length}개: {numsText(e.cells)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[11px] text-gray-500 dark:text-zinc-400 leading-relaxed break-keep">
-        끝자리가 같은 번호가 벽처럼 이어져 한 구역을 완전히 막은 복권입니다. 벽 번호를 누르면 선택 해제, [직접 연결]로 벽을 추가한 뒤 [적용]을 누르세요.
+        끝자리가 같은 번호가 벽처럼 이어져 한 구역을 완전히 막은 복권이에요. 표 모서리 칸 1개를 대각선 2개가 막은 경우도 포함해요. 1장씩 보기에서 벽 번호를 누르면 선택 해제, [직접 연결]로 벽을 추가한 뒤 [적용]을 누르세요.
       </p>
 
       {hiddenCount > 0 && (
@@ -103,120 +221,20 @@ export default function ConnectStep1({
           <p className="text-[11px] break-keep">복권이 더 등록되면 자동으로 다시 분석돼요.</p>
         </div>
       ) : (
-        list.map(({ ticket, enclosures }) => {
-          const editing = editId === ticket.id;
-          // 💡 선택 해제 전 원래 벽 중, 누르지 않은 번호는 화면에 그대로 유지 (분석에는 반영 안 됨)
-          const nowWalls = new Set(enclosures.flatMap((e) => e.walls.map(cellKey)));
-          const offNow = new Set(appliedOff[ticket.id] || []);
-          const keepWalls = offNow.size === 0
-            ? []
-            : analyzeTicket(ticket, minLen, undefined, undefined, appliedAdd[ticket.id])
-                .flatMap((e) => e.walls)
-                .filter((p) => !nowWalls.has(cellKey(p)) && !offNow.has(cellKey(p)));
-          const lostDigits = Array.from(new Set(keepWalls.map((p) => p.number % 10)))
-            .filter((d) => !enclosures.some((e) => e.digit === d))
-            .sort((a, b) => a - b);
-          // 해제한 칸이 이 복권 표 안의 번호인지 (안내 문구용)
-          const grid = ticketToGrid(ticket);
-          const offInTicket = [...offNow].some((k) => {
-            const [r, c] = k.split(',').map(Number);
-            return grid[r]?.[c] != null;
-          });
-
-          return (
-            <div
-              key={ticket.id}
-              className={`bg-gray-50 dark:bg-zinc-800/60 border rounded-2xl p-3 flex flex-col gap-2.5 ${
-                editing ? 'border-orange-400 ring-1 ring-orange-400' : 'border-gray-200 dark:border-zinc-700/50'
-              }`}
+        <Pager
+          items={list}
+          page={page}
+          setPage={setPage}
+          renderOne={renderCard}
+          renderSmall={({ ticket, enclosures }) => (
+            <SmallCard
+              title={ticketLabel(ticket, ticketNo.get(ticket.id))}
+              sub={enclosures.length > 0 ? enclosures.map((e) => `끝${e.digit}`).join('·') : '연결 없음'}
             >
-              <div className="flex justify-between items-center gap-2">
-                <span className="text-[13px] font-black text-gray-900 dark:text-zinc-100 flex items-center gap-1.5">
-                  {ticketLabel(ticket, ticketNo.get(ticket.id))}
-                  {isNew(ticket) && <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[9px] font-black">NEW</span>}
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {enclosures.length === 0 ? (
-                    <span className="px-1.5 py-0.5 rounded bg-gray-400 dark:bg-zinc-600 text-white text-[10px] font-black">연결 없음</span>
-                  ) : (
-                    <span className="text-[11px] font-bold text-amber-500">연결 {enclosures.length}개</span>
-                  )}
-                  <button
-                    onClick={() => toggleEdit(ticket.id, enclosures)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10.5px] font-bold border ${
-                      editing ? 'bg-orange-500 text-white border-orange-500' : 'bg-white dark:bg-zinc-900 text-orange-500 border-orange-400/60'
-                    }`}
-                  >
-                    <PencilLine size={11} /> {editing ? '닫기' : '직접 연결'}
-                  </button>
-                </div>
-              </div>
-
-              {/* 💡 직접 연결: 끝수 고르기 */}
-              {editing && (
-                <div className="rounded-xl bg-orange-50 dark:bg-orange-500/10 border border-orange-400/40 p-2.5 flex flex-col gap-2">
-                  <div className="text-[11px] font-bold text-orange-700 dark:text-orange-300 break-keep">
-                    ① 연결할 끝수를 고르고 → ② 벽으로 넣을 번호를 누르세요. 다시 누르면 취소돼요.
-                  </div>
-                  <div className="grid grid-cols-10 gap-1">
-                    {DIGITS.map((d) => (
-                      <button
-                        key={d}
-                        onClick={() => setEditDigit(d)}
-                        className={`py-1.5 rounded-md text-[12px] font-black border ${
-                          editDigit === d ? 'bg-orange-500 text-white border-orange-500' : 'bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border-gray-200 dark:border-zinc-700'
-                        }`}
-                      >
-                        {d}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <ConnectGrid
-                ticket={ticket}
-                walls={[...enclosures.flatMap((e) => e.walls), ...keepWalls]}
-                trapped={enclosures.flatMap((e) => e.cells)}
-                off={draftOff[ticket.id] || []}
-                add={draftAdd[ticket.id] || {}}
-                editing={editing}
-                editDigit={editDigit}
-                onTap={(k, isWall) => tapCell(ticket.id, k, isWall)}
-              />
-              {enclosures.length === 0 && offInTicket && (
-                <div className="text-[11px] text-gray-500 dark:text-zinc-400 break-keep">
-                  선택 해제한 번호 때문에 벽이 열려 분석에서 빠졌어요. 점선 칸을 누르면 다시 선택돼요.
-                </div>
-              )}
-              {enclosures.length > 0 && lostDigits.length > 0 && (
-                <div className="text-[11px] text-gray-500 dark:text-zinc-400 break-keep">
-                  끝수 {lostDigits.join(', ')}: 선택 해제로 벽이 열려 분석에서 빠졌어요. 점선 칸을 누르면 다시 선택돼요.
-                </div>
-              )}
-
-              <div className="flex flex-col gap-2 text-[12px]">
-                {enclosures.map((e, i) => {
-                  const addedHere = e.walls.filter((p) => appliedAdd[ticket.id]?.[cellKey(p)] !== undefined).length;
-                  return (
-                    <div key={i} className="flex flex-col gap-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-sm shrink-0 bg-[#1E3A8A]" />
-                        <span className="font-bold text-gray-900 dark:text-zinc-100 shrink-0">끝수 {e.digit} 연결 {e.walls.length}개</span>
-                        <span className="text-[11px] text-gray-500 dark:text-zinc-400 truncate">({numsText(e.walls)})</span>
-                        {addedHere > 0 && <span className="text-[10.5px] text-orange-500 font-bold shrink-0">직접 {addedHere}</span>}
-                      </div>
-                      <div className="flex items-center gap-2 pl-5">
-                        <span className="w-3 h-3 rounded-sm shrink-0 bg-yellow-300" />
-                        <span className="font-bold text-gray-900 dark:text-zinc-100">갇힌 {e.cells.length}개: {numsText(e.cells)}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })
+              <ConnectGrid small ticket={ticket} walls={enclosures.flatMap((e) => e.walls)} trapped={enclosures.flatMap((e) => e.cells)} />
+            </SmallCard>
+          )}
+        />
       )}
 
       {/* 💡 적용 / 취소 (바꾼 것이 있을 때만) */}
