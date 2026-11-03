@@ -2,19 +2,17 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Home, Download, Ticket, Search, Waypoints, Settings } from 'lucide-react';
+import { Home, Download, Ticket, Waypoints, Settings } from 'lucide-react';
 import InputTab from './InputTab';
 import TicketListTab from './TicketListTab';
-import PatternTab from './PatternTab';
 import ConnectTab from './ConnectTab';
 import SettingsModal from './SettingsModal';
 
-type TabKey = 'input' | 'list' | 'pattern' | 'connect';
+type TabKey = 'input' | 'list' | 'connect';
 
 const TABS: { key: TabKey; label: string; icon: typeof Home }[] = [
   { key: 'input', label: '입력', icon: Download },
   { key: 'list', label: '내 복권', icon: Ticket },
-  { key: 'pattern', label: '구역 분석', icon: Search },
   { key: 'connect', label: '연결 분석', icon: Waypoints },
 ];
 
@@ -38,7 +36,7 @@ export default function TicketScanPage() {
             <Home size={20} />
           </Link>
           <h1 className="text-[16px] font-black bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent tracking-tight">
-            복권 패턴 분석
+            {tab === 'connect' ? '연결 패턴 분석' : '복권 패턴 분석'}
           </h1>
           {/* 💡 설정 버튼 (제미나이 API 키) */}
           <button onClick={() => setShowSettings(true)} className="p-2 -mr-2 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-zinc-400 transition-colors">
@@ -46,9 +44,9 @@ export default function TicketScanPage() {
           </button>
         </header>
 
-        {/* 💡 탭 4개 */}
+        {/* 💡 탭 3개 */}
         <div className="px-4 pb-3 shrink-0">
-          <div className="grid grid-cols-4 bg-gray-100 dark:bg-zinc-800 rounded-xl p-1">
+          <div className="grid grid-cols-3 bg-gray-100 dark:bg-zinc-800 rounded-xl p-1">
             {TABS.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -68,7 +66,6 @@ export default function TicketScanPage() {
         <div className="flex-1 overflow-y-auto px-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {isMounted && tab === 'input' && <InputTab onGoToList={() => setTab('list')} />}
           {isMounted && tab === 'list' && <TicketListTab onGoToInput={() => setTab('input')} />}
-          {isMounted && tab === 'pattern' && <PatternTab onGoToInput={() => setTab('input')} />}
           {isMounted && tab === 'connect' && <ConnectTab onGoToInput={() => setTab('input')} />}
         </div>
 

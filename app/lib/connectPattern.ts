@@ -1,4 +1,4 @@
-// 💡 끝자리 벽 · 갇힌 구역 4단계 분석 도구
+// 💡 끝자리 연결(벽) · 갇힌 번호 분석 도구 (1~3단계)
 import type { Ticket } from '../store/useTicketStore';
 import { ticketToGrid } from './endDigitPattern';
 
@@ -158,6 +158,95 @@ export const analyzeTicket = (ticket: Ticket, minWall: number, digits?: Set<numb
 };
 
 export type TicketResult = { ticket: Ticket; enclosures: Enclosure[] };
+
+export type OffMap = Record<string, string[]>;                 // 복권 id → 선택 해제한 칸 목록 ("행,열")
+export type AddMap = Record<string, Record<string, number>>;   // 복권 id → 직접 연결한 칸 ("행,열" → 끝수)
+
+// 비어 있는 복권은 빼고 순서를 맞춰 정리 (비교·저장용)
+export const cleanOff = (map: OffMap): OffMap => {
+  const out: OffMap = {};
+  Object.keys(map).sort().forEach((id) => {
+    if (map[id].length > 0) out[id] = [...map[id]].sort();
+  });
+  return out;
+};
+export const cleanAdd = (map: AddMap): AddMap => {
+  const out: AddMap = {};
+  Object.keys(map).sort().forEach((id) => {
+    const keys = Object.keys(map[id]).sort();
+    if (keys.length === 0) return;
+    out[id] = {};
+    keys.forEach((k) => (out[id][k] = map[id][k]));
+  });
+  return out;
+};
+
+// 💡 2단계 결과 1건: source 복권의 연결 번호(벽)가 target 복권의 막힌 구역 안에 갇혀 있는 경우
+export type Step2Hit = {
+  target: Ticket;        // 번호가 갇혀 있는 복권
+  targetEnc: Enclosure;  // 그 복권의 막힌 구역
+  source: Ticket;        // 연결 번호를 가진 복권
+  sourceEnc: Enclosure;  // 그 복권의 연결(벽)
+  cells: GridCell[];     // target 구역 안에 갇힌 번호 중 source 연결 번호와 같은 번호
+};
+
+// 💡 3단계: 2단계에서 갇힌 번호별 중복 (몇 장의 복권에서 갇혔는지)
+export type DupNumber = { number: number; count: number; hits: Step2Hit[] };
+
+export type ConnectResult = {
+  step1: TicketResult[];   // 1단계: 같은 끝자리로 연결(벽)되어 막힌 구역이 있는 복권
+  step2: Step2Hit[];       // 2단계: 한 복권의 연결 번호가 다른 복권의 구역 안에 갇힌 경우
+  step2Numbers: number[];  // 2단계에서 뽑힌 번호 (중복 없이)
+  step3: DupNumber[];      // 3단계: 많이 갇힌 순서
+};
+
+/**
+ * 💡 1~3단계 한 번에 계산 (회차의 모든 복권 기준)
+ * 1단계: 복권별로 끝자리가 같은 번호로 연결된 패턴 (선택 해제 · 직접 연결 반영)
+ * 2단계: A 복권의 연결 번호가, 다른 B 복권의 1단계 막힌 구역 안에 갇혀 있으면 그 번호를 뽑음
+ * 3단계: 2단계에서 뽑힌 번호가 몇 장의 복권에서 갇혔는지 세어 많은 순서로 정렬
+ * 복권이 새로 등록될 때마다 다시 계산되므로, 월~토 추가 복권이 자동으로 반영됨
+ */
+export const runConnectAnalysis = (tickets: Ticket[], minWall: number, offMap: OffMap = {}, addMap: AddMap = {}): ConnectResult => {
+  // 1단계
+  const step1: TicketResult[] = [];
+  tickets.forEach((ticket) => {
+    const enclosures = analyzeTicket(ticket, minWall, undefined, new Set(offMap[ticket.id] || []), addMap[ticket.id] || {});
+    if (enclosures.length > 0) step1.push({ ticket, enclosures });
+  });
+
+  // 2단계
+  const step2: Step2Hit[] = [];
+  step1.forEach(({ ticket: target, enclosures: targetEncs }) => {
+    targetEncs.forEach((targetEnc) => {
+      step1.forEach(({ ticket: source, enclosures: sourceEncs }) => {
+        if (source.id === target.id) return; // 다른 복권끼리만
+        sourceEncs.forEach((sourceEnc) => {
+          const wallNumbers = new Set(sourceEnc.walls.map((w) => w.number));
+          const cells = targetEnc.cells.filter((c) => wallNumbers.has(c.number));
+          if (cells.length > 0) step2.push({ target, targetEnc, source, sourceEnc, cells });
+        });
+      });
+    });
+  });
+  const step2Numbers = Array.from(new Set(step2.flatMap((h) => h.cells.map((c) => c.number)))).sort((a, b) => a - b);
+
+  // 3단계
+  const dup = new Map<number, { targets: Set<string>; hits: Step2Hit[] }>();
+  step2.forEach((h) => {
+    new Set(h.cells.map((c) => c.number)).forEach((n) => {
+      const cur = dup.get(n) || { targets: new Set<string>(), hits: [] };
+      cur.targets.add(h.target.id);
+      cur.hits.push(h);
+      dup.set(n, cur);
+    });
+  });
+  const step3: DupNumber[] = Array.from(dup.entries())
+    .map(([number, v]) => ({ number, count: v.targets.size, hits: v.hits }))
+    .sort((a, b) => b.count - a.count || a.number - b.number);
+
+  return { step1, step2, step2Numbers, step3 };
+};
 
 export type FourStepResult = {
   step1: TicketResult[];                 // 1·2단계: 벽으로 막힌 구역이 있는 복권
