@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Ticket as TicketIcon, Sparkles, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Ticket as TicketIcon, Sparkles, RotateCcw, ChevronRight, LayoutList } from 'lucide-react';
 import { useTicketStore, Ticket } from '../store/useTicketStore';
 import { pad2 } from '../lib/endDigitPattern';
 import { runConnectAnalysis, recommendCombos, OffMap, AddMap, cleanOff, cleanAdd } from '../lib/connectPattern';
@@ -136,7 +136,7 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
     { key: 'tickets', label: '입력된 복권 보기', desc: `등록한 날짜별 · ${roundTickets.length}장` },
     { key: 'step1', label: '1단계: 연결 복권', desc: `같은 끝자리로 연결된 복권 · ${roundTickets.length}장 중 ${result.step1.length}장` },
     { key: 'step2', label: '2단계: 연결 번호', desc: `1단계에 갇혀 있던 번호가 다른 복권에서는 연결 번호가 된 복권 · ${result.step1.length}장 중 ${result.step2Tickets.length}장` },
-    { key: 'step3', label: '3단계: 갇힌 번호', desc: `1~45 번호판으로 보기 · ${result.step3.length}개` },
+    { key: 'step3', label: '3단계: 갇힌 번호', desc: `1단계의 연결 번호가 다른 복권에서 갇힌 번호 · ${result.step3.length}개` },
     { key: 'step4', label: '4단계: 중복 순위', desc: top ? `가장 많이: ${pad2(top.number)}번 · ${top.count}장` : '갇힌 번호 없음' },
     { key: 'step5', label: '5단계: 추천 번호', desc: combos.length > 0 ? `패턴 점수 순 6개 조합 · ${combos.length}세트` : '추천할 번호 부족' },
   ];
@@ -204,12 +204,15 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
         </>
       ) : (
         <>
-          {/* 💡 메뉴로 돌아가기 */}
-          <div className="flex items-center gap-1 -ml-1">
-            <button onClick={() => goView('menu')} className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg text-[12px] font-bold text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800">
-              <ChevronLeft size={16} /> 메뉴
+          {/* 💡 화면 제목 + 메뉴로 돌아가기 (오른쪽 큰 버튼) */}
+          <div className="flex items-center gap-2">
+            <h2 className="flex-1 min-w-0 text-[16px] font-black text-gray-900 dark:text-zinc-100 truncate">{current?.label}</h2>
+            <button
+              onClick={() => goView('menu')}
+              className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[13px] font-black shadow-md active:scale-95 transition-transform"
+            >
+              <LayoutList size={16} /> 메뉴
             </button>
-            <h2 className="text-[15px] font-black text-gray-900 dark:text-zinc-100">{current?.label}</h2>
           </div>
 
           {view === 'tickets' && <TicketsByDate roundTickets={roundTickets} ticketNo={ticketNo} isNew={isNew} />}
