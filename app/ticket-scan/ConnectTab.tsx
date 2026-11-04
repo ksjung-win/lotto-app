@@ -135,7 +135,7 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
   const MENU: { key: View; label: string; desc: string }[] = [
     { key: 'tickets', label: '입력된 복권 보기', desc: `등록한 날짜별 · ${roundTickets.length}장` },
     { key: 'step1', label: '1단계: 연결 복권', desc: `같은 끝자리로 연결된 복권 · ${roundTickets.length}장 중 ${result.step1.length}장` },
-    { key: 'step2', label: '2단계: 갇힌 복권', desc: `다른 복권의 연결 번호를 가둔 복권 · ${result.step1.length}장 중 ${result.step2Tickets.length}장` },
+    { key: 'step2', label: '2단계: 연결 번호', desc: `1단계에 갇혀 있던 번호가 다른 복권에서는 연결 번호가 된 복권 · ${result.step1.length}장 중 ${result.step2Tickets.length}장` },
     { key: 'step3', label: '3단계: 갇힌 번호', desc: `1~45 번호판으로 보기 · ${result.step3.length}개` },
     { key: 'step4', label: '4단계: 중복 순위', desc: top ? `가장 많이: ${pad2(top.number)}번 · ${top.count}장` : '갇힌 번호 없음' },
     { key: 'step5', label: '5단계: 추천 번호', desc: combos.length > 0 ? `패턴 점수 순 6개 조합 · ${combos.length}세트` : '추천할 번호 부족' },

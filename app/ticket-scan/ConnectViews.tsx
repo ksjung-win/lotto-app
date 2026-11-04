@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Search, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Square, LayoutGrid } from 'lucide-react';
 import { Ticket } from '../store/useTicketStore';
 import { getBallColor, pad2 } from '../lib/endDigitPattern';
-import { Step2Hit, Step2Ticket, DupNumber, Combo } from '../lib/connectPattern';
+import { Step2Hit, Step2Ticket, DupNumber, Combo, Enclosure, GridCell } from '../lib/connectPattern';
 import ConnectGrid, { ticketLabel, numsText } from './ConnectGrid';
 
 /* ═══════════════════════════════ 함께 쓰는 부품 ═══════════════════════════════ */
@@ -141,6 +141,89 @@ function Ball({ n, size = 'md', ring = false }: { n: number; size?: 'sm' | 'md';
   );
 }
 
+// 💡 비교할 출처 1개: 출처 복권의 연결(벽)과, 그 번호들이 갇힌 복권의 칸
+type CompareSource = { key: string; source: Ticket; sourceEnc: Enclosure; cells: GridCell[] };
+
+// 출처(복권+끝수)별로 묶기 (number를 주면 그 번호만)
+const groupSources = (hits: Step2Hit[], number?: number): CompareSource[] => {
+  const map = new Map<string, CompareSource>();
+  hits.forEach((h) => {
+    const k = `${h.source.id}|${h.sourceEnc.digit}`;
+    const cells = h.cells.filter((c) => number === undefined || c.number === number);
+    const cur = map.get(k);
+    if (cur) cur.cells = [...cur.cells, ...cells.filter((c) => !cur.cells.some((x) => x.row === c.row && x.col === c.col))];
+    else map.set(k, { key: k, source: h.source, sourceEnc: h.sourceEnc, cells });
+  });
+  return Array.from(map.values());
+};
+
+// 💡 갇힌 복권 ↔ 출처 복권 나란히 비교 (출처가 많으면 칩·◀▶로 하나씩)
+function CompareCard({ target, targetWalls, sources, ticketNo }: {
+  target: Ticket; targetWalls: GridCell[]; sources: CompareSource[]; ticketNo: Map<string, number>;
+}) {
+  const [sel, setSel] = useState(0);
+  const i = Math.min(sel, sources.length - 1);
+  const cur = sources[i];
+  if (!cur) return null;
+  const nums = Array.from(new Set(cur.cells.map((c) => c.number))).sort((a, b) => a - b);
+  const markCells = cur.sourceEnc.walls.filter((w) => nums.includes(w.number));
+  const tNo = ticketNo.get(target.id);
+  const sNo = ticketNo.get(cur.source.id);
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* 출처 고르기 (많으면 옆으로 밀기) */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10.5px] font-bold text-gray-500 dark:text-zinc-400 shrink-0">출처 {sources.length}장</span>
+        <div className="flex gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
+          {sources.map((s, j) => (
+            <button
+              key={s.key}
+              onClick={() => setSel(j)}
+              className={`shrink-0 px-2 py-1 rounded-lg text-[10.5px] font-bold border ${
+                j === i ? 'bg-[#1E3A8A] text-white border-[#1E3A8A]' : 'bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 border-gray-200 dark:border-zinc-700'
+              }`}
+            >
+              {ticketNo.get(s.source.id)}번 끝{s.sourceEnc.digit}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 표 2장 나란히 */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10.5px] font-black text-orange-500 truncate">갇힌 복권 ({tNo}번)</span>
+          <ConnectGrid small ticket={target} walls={targetWalls} highlight={cur.cells} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10.5px] font-black text-[#1E3A8A] dark:text-blue-300 truncate">출처 복권 ({sNo}번)</span>
+          <ConnectGrid small ticket={cur.source} walls={cur.sourceEnc.walls} mark={markCells} />
+        </div>
+      </div>
+
+      {/* 설명 + 넘기기 */}
+      <div className="flex items-start gap-2">
+        <div className="flex-1 text-[11px] text-gray-600 dark:text-zinc-400 leading-relaxed break-keep">
+          <b className="text-gray-900 dark:text-zinc-100">{ticketLabel(cur.source, sNo)}</b> 끝수{cur.sourceEnc.digit} 연결: {numsText(cur.sourceEnc.walls)}
+          <br />→ 이 중 <b className="text-orange-500">{nums.map(pad2).join('·')}</b>이(가) {tNo}번에서 갇힘
+        </div>
+        {sources.length > 1 && (
+          <div className="flex items-center gap-1 shrink-0">
+            <button disabled={i <= 0} onClick={() => setSel(i - 1)} className="p-1 rounded-lg border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-300 disabled:opacity-30">
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-[11px] font-black text-gray-700 dark:text-zinc-200">{i + 1}/{sources.length}</span>
+            <button disabled={i >= sources.length - 1} onClick={() => setSel(i + 1)} className="p-1 rounded-lg border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-300 disabled:opacity-30">
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // 💡 어떤 번호가 갇힌 복권들 (3단계 · 4단계에서 번호를 누르면 나옴)
 function TrappedTicketsFor({ number, hits, ticketNo }: { number: number; hits: Step2Hit[]; ticketNo: Map<string, number> }) {
   // 갇힌 복권별로 묶기
@@ -149,30 +232,30 @@ function TrappedTicketsFor({ number, hits, ticketNo }: { number: number; hits: S
   const groups = Array.from(byTarget.values()).sort(
     (a, b) => (ticketNo.get(a[0].target.id) || 0) - (ticketNo.get(b[0].target.id) || 0)
   );
+  const wallsOf = (list: Step2Hit[]) => list.flatMap((h) => h.targetEnc.walls);
+  const cellsOf = (list: Step2Hit[]) => list.flatMap((h) => h.cells.filter((c) => c.number === number));
 
   return (
     <div className="flex flex-col gap-2.5">
       <div className="text-[12.5px] font-black text-gray-900 dark:text-zinc-100">
         <span className="text-orange-500">{pad2(number)}번</span>이 갇힌 복권 {groups.length}장
       </div>
-      {groups.map((list) => {
-        const target = list[0].target;
-        const cells = list.flatMap((h) => h.cells.filter((c) => c.number === number));
-        const walls = list.flatMap((h) => h.targetEnc.walls);
-        return (
-          <div key={target.id} className="bg-gray-50 dark:bg-zinc-800/60 border border-gray-200 dark:border-zinc-700/50 rounded-2xl p-3 flex flex-col gap-2">
-            <div className="text-[13px] font-black text-gray-900 dark:text-zinc-100">{ticketLabel(target, ticketNo.get(target.id))}</div>
-            <ConnectGrid ticket={target} walls={walls} highlight={cells} />
-            <div className="text-[11px] text-gray-600 dark:text-zinc-400 break-keep">
-              {list.map((h, i) => (
-                <div key={i}>
-                  ← <b className="text-gray-900 dark:text-zinc-100">{ticketLabel(h.source, ticketNo.get(h.source.id))}</b>의 끝수{h.sourceEnc.digit} 연결 번호
-                </div>
-              ))}
-            </div>
+      <Legend items={[['bg-orange-500', '갇힌 번호'], ['bg-[#1E3A8A]', '연결(벽)'], ['bg-[#1E3A8A] ring-2 ring-orange-400', '출처에서의 그 번호']]} />
+      <Pager
+        key={number}
+        items={groups}
+        renderOne={(list) => (
+          <div key={list[0].target.id} className="bg-gray-50 dark:bg-zinc-800/60 border border-gray-200 dark:border-zinc-700/50 rounded-2xl p-3 flex flex-col gap-2">
+            <div className="text-[13px] font-black text-gray-900 dark:text-zinc-100">{ticketLabel(list[0].target, ticketNo.get(list[0].target.id))}</div>
+            <CompareCard target={list[0].target} targetWalls={wallsOf(list)} sources={groupSources(list, number)} ticketNo={ticketNo} />
           </div>
-        );
-      })}
+        )}
+        renderSmall={(list) => (
+          <SmallCard title={ticketLabel(list[0].target, ticketNo.get(list[0].target.id))} sub={`출처 ${groupSources(list, number).length}`}>
+            <ConnectGrid small ticket={list[0].target} walls={wallsOf(list)} highlight={cellsOf(list)} />
+          </SmallCard>
+        )}
+      />
     </div>
   );
 }
@@ -247,61 +330,18 @@ export function TicketsByDate({ roundTickets, ticketNo, isNew }: { roundTickets:
 
 /* ═══════════════════════════════ 2단계: 갇힌 복권 ═══════════════════════════════ */
 function Step2Card({ item, ticketNo }: { item: Step2Ticket; ticketNo: Map<string, number> }) {
-  const [openSource, setOpenSource] = useState<string | null>(null);
-  // 출발 복권(+끝수)별로 묶기
-  const sources = new Map<string, Step2Hit[]>();
-  item.hits.forEach((h) => {
-    const k = `${h.source.id}|${h.sourceEnc.digit}`;
-    sources.set(k, [...(sources.get(k) || []), h]);
-  });
-
   return (
     <div className="bg-gray-50 dark:bg-zinc-800/60 border border-gray-200 dark:border-zinc-700/50 rounded-2xl p-3 flex flex-col gap-2.5">
       <div className="flex justify-between items-center">
         <span className="text-[13px] font-black text-gray-900 dark:text-zinc-100">{ticketLabel(item.target, ticketNo.get(item.target.id))}</span>
         <span className="text-[11px] font-black text-orange-500">갇힌 번호 {item.numbers.length}개</span>
       </div>
-      <ConnectGrid ticket={item.target} walls={item.walls} highlight={item.cells} />
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-[11px] font-bold text-gray-500 dark:text-zinc-400">갇힌 번호</span>
         {item.numbers.map((n) => <Ball key={n} n={n} size="sm" ring />)}
       </div>
-
-      {/* 어디서 온 번호? */}
-      <div className="rounded-xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 p-2.5 flex flex-col gap-2">
-        <div className="text-[11.5px] font-black text-gray-700 dark:text-zinc-300">어디서 온 번호?</div>
-        {Array.from(sources.entries()).map(([k, hits]) => {
-          const h = hits[0];
-          const nums = Array.from(new Set(hits.flatMap((x) => x.cells.map((c) => c.number)))).sort((a, b) => a - b);
-          const isOpen = openSource === k;
-          return (
-            <div key={k} className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-[11.5px]">
-                <span className="font-black text-orange-500 shrink-0">{nums.map(pad2).join('·')}</span>
-                <span className="text-gray-600 dark:text-zinc-400 flex-1 break-keep">
-                  ← <b className="text-gray-900 dark:text-zinc-100">{ticketLabel(h.source, ticketNo.get(h.source.id))}</b> 끝수{h.sourceEnc.digit} 연결
-                </span>
-                <button
-                  onClick={() => setOpenSource(isOpen ? null : k)}
-                  className={`shrink-0 px-2 py-1 rounded-lg text-[10.5px] font-bold border ${
-                    isOpen ? 'bg-[#1E3A8A] text-white border-[#1E3A8A]' : 'text-[#1E3A8A] dark:text-blue-300 border-[#1E3A8A]/50'
-                  }`}
-                >
-                  {isOpen ? '닫기' : '표 보기'}
-                </button>
-              </div>
-              {isOpen && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10.5px] font-bold text-gray-500 dark:text-zinc-400">
-                    {ticketLabel(h.source, ticketNo.get(h.source.id))} · 끝수{h.sourceEnc.digit} 연결 ({numsText(h.sourceEnc.walls)})
-                  </span>
-                  <ConnectGrid ticket={h.source} walls={h.sourceEnc.walls} />
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {/* 💡 어디서 온 번호? → 출처 복권과 나란히 비교 */}
+      <CompareCard target={item.target} targetWalls={item.walls} sources={groupSources(item.hits)} ticketNo={ticketNo} />
     </div>
   );
 }
@@ -311,9 +351,11 @@ export function Step2View({ step2Tickets, step1Count, ticketNo }: { step2Tickets
   return (
     <div className="flex flex-col gap-3">
       <SummaryBox>
-        연결 복권 {step1Count}장 중 <span className="text-orange-500">{step2Tickets.length}장</span>이 다른 복권의 연결 번호를 가두었어요.
+        1단계에 갇혀 있던 번호가 다른 복권에서는 연결 번호가 된 복권이에요. (주황 = 그런 번호)
+        <br />
+        연결 복권 {step1Count}장 중 <span className="text-orange-500">{step2Tickets.length}장</span>
       </SummaryBox>
-      <Legend items={[['bg-[#1E3A8A]', '이 복권의 연결(벽)'], ['bg-orange-500', '갇힌 번호 (다른 복권의 연결 번호)']]} />
+      <Legend items={[['bg-orange-500', '갇힌 번호'], ['bg-[#1E3A8A]', '연결(벽)'], ['bg-[#1E3A8A] ring-2 ring-orange-400', '출처에서의 그 번호']]} />
       <Pager
         items={step2Tickets}
         renderOne={(item) => <Step2Card key={item.target.id} item={item} ticketNo={ticketNo} />}

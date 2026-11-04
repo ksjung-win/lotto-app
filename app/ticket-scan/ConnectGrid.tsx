@@ -12,15 +12,16 @@ export const cellKey = (p: { row: number; col: number }) => `${p.row},${p.col}`;
 export const numsText = (cells: GridCell[]) => cells.map((c) => pad2(c.number)).join('·');
 
 // 💡 복권 1장 표
-// 남색: 연결(벽) · 노란색: 갇힌 번호 · 주황색: 2단계에서 뽑힌 번호
+// 남색: 연결(벽) · 노란색: 갇힌 번호 · 주황색: 2단계에서 뽑힌 번호 · 주황 테두리: 출처 복권의 그 번호
 // (1단계 화면에서는 벽 번호 선택 해제 · 직접 연결도 여기서 처리)
 export default function ConnectGrid({
-  ticket, walls = [], trapped = [], highlight = [], off = [], add = {}, editing = false, editDigit = null, onTap, small = false,
+  ticket, walls = [], trapped = [], highlight = [], mark = [], off = [], add = {}, editing = false, editDigit = null, onTap, small = false,
 }: {
   ticket: Ticket;
   walls?: GridCell[];              // 남색으로 칠할 벽
   trapped?: GridCell[];            // 노란색으로 칠할 갇힌 번호
   highlight?: GridCell[];          // 주황색으로 칠할 번호
+  mark?: GridCell[];               // 주황 테두리를 두를 번호 (출처 복권에서 '이 번호가 갇혔다' 표시)
   off?: string[];                  // 선택 해제한 칸 (점선)
   add?: Record<string, number>;    // 직접 연결한 칸 → 끝수
   editing?: boolean;               // 직접 연결 중이면 아무 칸이나 누를 수 있음
@@ -32,6 +33,7 @@ export default function ConnectGrid({
   const wallSet = new Set(walls.map(cellKey));
   const trapSet = new Set(trapped.map(cellKey));
   const hiSet = new Set(highlight.map(cellKey));
+  const markSet = new Set(mark.map(cellKey));
   const offSet = new Set(off);
 
   return (
@@ -65,7 +67,7 @@ export default function ConnectGrid({
             <div
               key={key}
               onClick={canTap ? () => onTap!(key, isWall) : undefined}
-              className={`relative ${box} ${cls} ${canTap ? 'cursor-pointer active:scale-95' : ''}`}
+              className={`relative ${box} ${cls} ${markSet.has(key) ? 'ring-[3px] ring-inset ring-orange-400' : ''} ${canTap ? 'cursor-pointer active:scale-95' : ''}`}
             >
               {pad2(n)}
               {isAdd && <span className="absolute top-0.5 right-1 text-[9px] font-black text-orange-300">끝{addDigit}</span>}
