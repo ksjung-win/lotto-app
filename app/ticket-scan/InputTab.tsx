@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Camera, Images, PenLine, X, CheckCircle2, AlertTriangle, XCircle, Loader2, Sparkles } from 'lucide-react';
+import { Camera, Images, PenLine, X, CheckCircle2, AlertTriangle, XCircle, Loader2, Sparkles, RotateCw, Trash2 } from 'lucide-react';
 import { useTicketStore, LottoGame } from '../store/useTicketStore';
 import { readTicketFromFile } from '../lib/lottoQr';
 import { readTicketWithGemini, getGeminiKey, AiTicket } from '../lib/geminiReader';
@@ -11,6 +11,18 @@ import { getBallColor, pad2 } from '../lib/endDigitPattern';
 const MAX_FILES = 50;
 const GAME_LABELS = ['A', 'B', 'C', 'D', 'E'];
 
+// 💡 이미 등록된 복권인지 확인 (같은 회차 + TR번호 앞 10자리, TR이 없으면 번호가 모두 같으면 중복)
+const trKey = (tr: string | null | undefined) => (tr ? tr.replace(/\D/g, '').slice(0, 10) : '');
+const gamesKey = (rows: number[][]) => rows.filter((r) => r.length > 0).map((r) => r.join(',')).join('|');
+const findRegistered = (round: number | null | undefined, tr: string | null | undefined, rows: number[][]) => {
+  if (!round) return undefined;
+  return useTicketStore.getState().tickets.find(
+    (t) =>
+      t.round === round &&
+      (trKey(tr) && t.tr ? trKey(t.tr) === trKey(tr) : gamesKey(t.games.map((g) => g.numbers)) === gamesKey(rows))
+  );
+};
+
 type ResultItem = {
   key: string;
   status: 'ok' | 'dup' | 'fail' | 'review'; // review = AI가 읽음, 확인 후 등록 필요
@@ -18,6 +30,9 @@ type ResultItem = {
   detail: string;
   previewUrl?: string; // 실패했거나 확인이 필요한 사진만 미리보기 보관
   ai?: AiTicket;       // 제미나이가 읽은 내용
+  file?: File;         // 💡 실패한 사진 원본 (재인식할 때 다시 읽음)
+  label?: string;      // 예: '사진 1'
+  noKey?: boolean;     // 💡 제미나이 키가 없어서 실패했는지
 };
 
 export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
@@ -30,6 +45,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [results, setResults] = useState<ResultItem[]>([]);
   const [notice, setNotice] = useState('');
+  const [retrying, setRetrying] = useState<string[]>([]); // 💡 재인식 중인 사진
 
   // 직접 입력 팝업
   const [isManualOpen, setIsManualOpen] = useState(false);
@@ -44,6 +60,76 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
   const [manualWarnings, setManualWarnings] = useState<string[]>([]);
   const [previewBig, setPreviewBig] = useState(false); // 사진 크게 보기
 
+  // 💡 사진 1장 판독: QR 먼저 → 없으면 제미나이 AI → 그래도 안 되면 실패
+  const readOne = async (file: File, key: string, label: string, previewUrl?: string): Promise<ResultItem> => {
+    let parsed = null;
+    try {
+      parsed = await readTicketFromFile(file);
+    } catch (e) {
+      console.error('판독 오류:', e);
+    }
+
+    if (!parsed && getGeminiKey()) {
+      // QR이 없으면 제미나이 AI로 읽기 → 확인 화면에서 확인 후 등록
+      try {
+        const ai = await readTicketWithGemini(file);
+        // 💡 이미 등록된 복권이면 확인 화면 없이 '중복'으로 표시
+        if (findRegistered(ai.round, ai.tr, ai.rows)) {
+          return {
+            key,
+            label,
+            status: 'dup',
+            title: `${label}: 이미 등록된 복권 · ${ai.round}회${ai.tr ? ` TR …${trKey(ai.tr).slice(-4)}` : ''}`,
+            detail: '이미 등록돼 있어서 건너뛰었어요.',
+            previewUrl: previewUrl || URL.createObjectURL(file),
+            file,
+          };
+        }
+        return {
+          key,
+          label,
+          status: 'review',
+          title: `${label}: AI로 읽음${ai.round ? ` · ${ai.round}회` : ''}`,
+          detail: ai.warnings.length > 0 ? `확인 필요: ${ai.warnings.join(' ')}` : '번호가 맞는지 확인한 뒤 등록해 주세요.',
+          previewUrl: previewUrl || URL.createObjectURL(file),
+          ai,
+          file,
+        };
+      } catch (e) {
+        return {
+          key,
+          label,
+          status: 'fail',
+          title: `${label}: QR 없음 · AI 읽기 실패`,
+          detail: e instanceof Error ? e.message : 'AI로 읽지 못했습니다. 직접 입력해 주세요.',
+          previewUrl: previewUrl || URL.createObjectURL(file),
+          file,
+        };
+      }
+    }
+    if (!parsed) {
+      return {
+        key,
+        label,
+        status: 'fail',
+        title: `${label}: QR 인식 실패`,
+        detail: 'QR코드가 없거나 흐려요. 위쪽 ⚙ 설정에서 제미나이 키를 넣으면 AI로 읽을 수 있어요. 지금은 다시 찍거나 직접 입력해 주세요.',
+        previewUrl: previewUrl || URL.createObjectURL(file),
+        file,
+        noKey: true,
+      };
+    }
+    const res = addTicket({ round: parsed.round, tr: parsed.tr, games: parsed.games, source: 'qr' });
+    const trShort = parsed.tr.slice(0, 10).slice(-4);
+    return {
+      key,
+      label,
+      status: res === 'added' ? 'ok' : 'dup',
+      title: `${parsed.round}회 · TR …${trShort}`,
+      detail: res === 'added' ? `${parsed.games.length}게임 등록 완료` : '이미 등록된 복권이라 건너뛰었어요',
+    };
+  };
+
   // 💡 사진 여러 장 판독
   const processFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
@@ -55,54 +141,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     const newResults: ResultItem[] = [];
 
     for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const key = `${Date.now()}_${i}`;
-      let parsed = null;
-      try {
-        parsed = await readTicketFromFile(file);
-      } catch (e) {
-        console.error('판독 오류:', e);
-      }
-
-      if (!parsed && getGeminiKey()) {
-        // 💡 QR이 없으면 제미나이 AI로 읽기 → 확인 화면에서 확인 후 등록
-        try {
-          const ai = await readTicketWithGemini(file);
-          newResults.push({
-            key,
-            status: 'review',
-            title: `사진 ${i + 1}: AI로 읽음${ai.round ? ` · ${ai.round}회` : ''}`,
-            detail: ai.warnings.length > 0 ? `확인 필요: ${ai.warnings.join(' ')}` : '번호가 맞는지 확인한 뒤 등록해 주세요.',
-            previewUrl: URL.createObjectURL(file),
-            ai,
-          });
-        } catch (e) {
-          newResults.push({
-            key,
-            status: 'fail',
-            title: `사진 ${i + 1}: QR 없음 · AI 읽기 실패`,
-            detail: e instanceof Error ? e.message : 'AI로 읽지 못했습니다. 직접 입력해 주세요.',
-            previewUrl: URL.createObjectURL(file),
-          });
-        }
-      } else if (!parsed) {
-        newResults.push({
-          key,
-          status: 'fail',
-          title: `사진 ${i + 1}: QR 인식 실패`,
-          detail: 'QR코드가 없거나 흐려요. 위쪽 ⚙ 설정에서 제미나이 키를 넣으면 AI로 읽을 수 있어요. 지금은 다시 찍거나 직접 입력해 주세요.',
-          previewUrl: URL.createObjectURL(file),
-        });
-      } else {
-        const res = addTicket({ round: parsed.round, tr: parsed.tr, games: parsed.games, source: 'qr' });
-        const trShort = parsed.tr.slice(0, 10).slice(-4);
-        newResults.push({
-          key,
-          status: res === 'added' ? 'ok' : 'dup',
-          title: `${parsed.round}회 · TR …${trShort}`,
-          detail: res === 'added' ? `${parsed.games.length}게임 등록 완료` : '이미 등록된 복권이라 건너뛰었어요',
-        });
-      }
+      newResults.push(await readOne(files[i], `${Date.now()}_${i}`, `사진 ${i + 1}`));
       setProgress({ done: i + 1, total: files.length });
       setResults([...newResults]);
     }
@@ -111,9 +150,62 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     if (cameraInputRef.current) cameraInputRef.current.value = '';
     if (galleryInputRef.current) galleryInputRef.current.value = '';
 
+    // 💡 이미 등록된 복권이 있었으면 한 번 알려주기
+    const dupN = newResults.filter((r) => r.status === 'dup').length;
+    const reviewN = newResults.filter((r) => r.status === 'review').length;
+    if (dupN > 0) {
+      alert(
+        `${files.length}장 중 ${dupN}장은 이미 등록된 복권이라 건너뛰었어요.` +
+          (reviewN > 0 ? ` 새 복권 ${reviewN}장을 확인해 주세요.` : '')
+      );
+    }
+
     // 💡 AI가 읽은 사진이 있으면 첫 번째 확인 화면을 바로 열기
     const firstReview = newResults.find((r) => r.status === 'review');
     if (firstReview) openManual(firstReview.previewUrl, firstReview.key, firstReview.ai);
+  };
+
+  // 💡 다음 확인 대기 복권 열기: 지금 복권 '다음' 순서부터 찾고, 없으면 앞쪽에 남은 것
+  const openNextReview = (list: ResultItem[], currentKey: string | null) => {
+    const idx = currentKey ? list.findIndex((r) => r.key === currentKey) : -1;
+    const ordered = [...list.slice(idx + 1), ...list.slice(0, Math.max(idx, 0))];
+    const next = ordered.find((r) => r.status === 'review' && r.key !== currentKey);
+    if (next) setTimeout(() => openManual(next.previewUrl, next.key, next.ai), 50);
+  };
+
+  // 💡 실패한 사진 다시 읽기 (1장)
+  const retryOne = async (item: ResultItem, openReview = true): Promise<ResultItem | null> => {
+    if (!item.file) return null;
+    setRetrying((prev) => [...prev, item.key]);
+    const next = await readOne(item.file, item.key, item.label || '사진', item.previewUrl);
+    setResults((prev) => prev.map((r) => (r.key === item.key ? next : r)));
+    setRetrying((prev) => prev.filter((k) => k !== item.key));
+    if (openReview && next.status === 'review') openManual(next.previewUrl, next.key, next.ai);
+    return next;
+  };
+
+  // 💡 실패한 사진 모두 다시 읽기
+  const retryAll = async () => {
+    const fails = results.filter((r) => r.status === 'fail' && r.file);
+    if (fails.length === 0) return;
+    setIsProcessing(true);
+    setProgress({ done: 0, total: fails.length });
+    let firstReview: ResultItem | null = null;
+    for (let i = 0; i < fails.length; i++) {
+      const next = await retryOne(fails[i], false);
+      if (!firstReview && next?.status === 'review') firstReview = next;
+      setProgress({ done: i + 1, total: fails.length });
+    }
+    setIsProcessing(false);
+    if (firstReview) openManual(firstReview.previewUrl, firstReview.key, firstReview.ai);
+  };
+
+  // 💡 결과 목록에서 지우기 (등록된 복권은 지워지지 않음)
+  const removeResult = (key: string) => setResults((prev) => prev.filter((r) => r.key !== key));
+  const clearResults = () => {
+    if (!window.confirm('결과 목록을 모두 지울까요? (이미 등록된 복권은 그대로 남아요)')) return;
+    setResults([]);
+    setProgress({ done: 0, total: 0 });
   };
 
   // 💡 직접 입력 팝업 열기 (ai가 있으면 AI가 읽은 번호를 채워서 '확인 화면'으로 열기)
@@ -168,12 +260,29 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     const tr = manualTr.replace(/\D/g, '') || null;
     const res = addTicket({ round, tr, games, source: manualSource });
     if (res === 'duplicate') {
-      alert(tr ? `${round}회에 같은 TR번호의 복권이 이미 등록되어 있습니다.` : '같은 회차에 똑같은 번호의 복권이 이미 등록되어 있습니다.');
+      const name = `${round}회${tr ? ` TR …${tr.slice(0, 10).slice(-4)}` : ''}`;
+      if (!manualFailKey) {
+        // 그냥 직접 입력한 경우: 알리고 화면에 머물러 고칠 수 있게
+        alert(`${name}는 이미 등록된 복권이에요.`);
+        return;
+      }
+      // 💡 사진에서 읽은 복권: 알리고 '중복'으로 바꾼 뒤 다음 복권으로 넘어감
+      alert(`${name}는 이미 등록된 복권이에요. 이 사진은 건너뛰고 다음 복권으로 넘어갈게요.`);
+      const dupItem = (r: ResultItem): ResultItem => ({
+        ...r,
+        status: 'dup',
+        title: `${r.label || '사진'}: 이미 등록된 복권 · ${name}`,
+        detail: '이미 등록돼 있어서 건너뛰었어요.',
+        ai: undefined,
+      });
+      setResults((prev) => prev.map((r) => (r.key === manualFailKey ? dupItem(r) : r)));
+      setIsManualOpen(false);
+      openNextReview(results, manualFailKey);
       return;
     }
 
     const newItem: ResultItem = {
-      key: `manual_${Date.now()}`,
+      key: manualFailKey || `manual_${Date.now()}`,
       status: 'ok',
       title: `${round}회 · ${tr ? `TR …${tr.slice(0, 10).slice(-4)}` : '직접 입력'}${manualSource === 'ai' ? ' (AI)' : ''}`,
       detail: `${games.length}게임 등록 완료`,
@@ -184,15 +293,15 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     );
     setIsManualOpen(false);
 
-    // 💡 확인할 AI 사진이 더 있으면 다음 확인 화면을 이어서 열기
-    const next = results.find((r) => r.status === 'review' && r.key !== manualFailKey);
-    if (next) setTimeout(() => openManual(next.previewUrl, next.key, next.ai), 50);
+    // 💡 확인할 AI 사진이 더 있으면 '다음 순서'의 확인 화면을 이어서 열기
+    openNextReview(results, manualFailKey);
   };
 
   const okCount = results.filter((r) => r.status === 'ok').length;
   const dupCount = results.filter((r) => r.status === 'dup').length;
   const failCount = results.filter((r) => r.status === 'fail').length;
   const reviewCount = results.filter((r) => r.status === 'review').length;
+  const hasKey = getGeminiKey() !== '';
 
   return (
     <div className="flex flex-col gap-3 pb-4">
@@ -268,6 +377,26 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
         </div>
       )}
 
+      {/* 💡 실패 사진 모두 재인식 · 목록 비우기 */}
+      {!isProcessing && results.length > 0 && (
+        <div className="flex gap-2">
+          {failCount > 0 && (
+            <button
+              onClick={retryAll}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[12px] font-bold active:scale-95"
+            >
+              <RotateCw size={14} /> 실패 {failCount}장 모두 재인식
+            </button>
+          )}
+          <button
+            onClick={clearResults}
+            className="flex items-center justify-center gap-1 px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[12px] font-bold active:scale-95"
+          >
+            <Trash2 size={13} /> 목록 비우기
+          </button>
+        </div>
+      )}
+
       {/* 💡 사진별 결과 */}
       <div className="flex flex-col gap-2">
         {results.map((r) => (
@@ -289,14 +418,26 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
             {r.status === 'review' && <Sparkles size={18} className="text-blue-500 shrink-0 mt-0.5" />}
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-bold text-gray-900 dark:text-zinc-100">{r.title}</div>
-              <div className="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5 break-keep">{r.detail}</div>
+              <div className="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5 break-keep">
+                {r.noKey && hasKey ? '제미나이 키가 저장됐어요. [재인식]을 누르면 AI로 다시 읽어요.' : r.detail}
+              </div>
               {r.status === 'review' && (
                 <button onClick={() => openManual(r.previewUrl, r.key, r.ai)} className="mt-2 px-2.5 py-1.5 rounded-lg bg-blue-500 text-white text-[11px] font-bold">
                   확인하고 등록
                 </button>
               )}
               {r.status === 'fail' && (
-                <div className="flex gap-1.5 mt-2">
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {r.file && (
+                    <button
+                      disabled={retrying.includes(r.key) || isProcessing}
+                      onClick={() => retryOne(r)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500 text-white text-[11px] font-bold disabled:opacity-60"
+                    >
+                      {retrying.includes(r.key) ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
+                      {retrying.includes(r.key) ? '읽는 중…' : '재인식'}
+                    </button>
+                  )}
                   <button onClick={() => cameraInputRef.current?.click()} className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 text-[11px] font-bold text-gray-700 dark:text-zinc-300">
                     다시 찍기
                   </button>
@@ -310,6 +451,10 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={r.previewUrl} alt="실패한 사진" className="w-12 h-16 object-cover rounded-md shrink-0" />
             )}
+            {/* 💡 이 줄 지우기 */}
+            <button onClick={() => removeResult(r.key)} className="shrink-0 -mr-1 -mt-1 p-1 rounded-full text-gray-400 hover:bg-black/5 dark:hover:bg-white/10" aria-label="목록에서 지우기">
+              <X size={14} />
+            </button>
           </div>
         ))}
       </div>
