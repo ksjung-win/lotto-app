@@ -50,6 +50,8 @@ export default function ConnectGrid({
           const canTap = !!onTap && (isAdd || isOff || isWall || editing);
           const cls = isAdd
             ? 'bg-[#1E3A8A] text-white ring-[3px] ring-inset ring-orange-400'
+            : isOff && trapSet.has(key)
+            ? 'bg-yellow-300 text-gray-900 outline-2 outline-dashed -outline-offset-4 outline-gray-600' // 💡 선택 해제해서 갇힌 번호가 된 칸
             : isOff
             ? 'bg-gray-200 dark:bg-zinc-700 text-gray-500 dark:text-zinc-400 outline-2 outline-dashed -outline-offset-4 outline-gray-500 dark:outline-zinc-400'
             : hiSet.has(key)

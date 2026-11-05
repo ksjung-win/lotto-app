@@ -10,6 +10,9 @@ import { Pager, SmallCard } from './ConnectViews';
 
 const DIGITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
+// 💡 카드 1장 = 복권 1장의 '끝수 하나' 패턴 (끝수가 여러 개면 카드가 여러 장)
+type CardItem = TicketResult & { all: Enclosure[]; part?: { i: number; n: number } };
+
 // 💡 1단계: 연결 패턴 보기 (벽 번호 선택 해제 · 직접 연결 · 적용)
 export default function ConnectStep1({
   roundTickets, ticketNo, step1, minLen, appliedOff, appliedAdd, isNew, onApply, onDirtyChange,
@@ -37,6 +40,15 @@ export default function ConnectStep1({
   useEffect(() => {
     onDirtyChange(isDirty);
   }, [isDirty, onDirtyChange]);
+
+  // 💡 [적용]·[모두 되돌리기] 후: 보던 페이지는 그대로 두고, 수정 내용만 새로 맞춤
+  const [seen, setSeen] = useState({ appliedOff, appliedAdd });
+  if (seen.appliedOff !== appliedOff || seen.appliedAdd !== appliedAdd) {
+    setSeen({ appliedOff, appliedAdd });
+    setDraftOff(appliedOff);
+    setDraftAdd(appliedAdd);
+    setEditId(null);
+  }
 
   const toggleOff = (ticketId: string, k: string) =>
     setDraftOff((prev) => {
@@ -77,23 +89,41 @@ export default function ConnectStep1({
     .filter((t) => !step1.some((s) => s.ticket.id === t.id))
     .filter((t) => showAll || editId === t.id || hasOff(t) || hasAdd(t))
     .map((t) => ({ ticket: t, enclosures: [] }));
-  const list = [...step1, ...extra].sort((a, b) => (ticketNo.get(a.ticket.id) || 0) - (ticketNo.get(b.ticket.id) || 0));
+  // 💡 한 복권에 끝수가 2개 이상이면 끝수마다 카드를 따로 만듦 (패턴이 서로 겹쳐 보이지 않게)
+  const list: CardItem[] = [
+    ...step1.flatMap((s) =>
+      s.enclosures.map((e, i): CardItem => ({
+        ticket: s.ticket,
+        enclosures: [e],
+        all: s.enclosures,
+        part: s.enclosures.length > 1 ? { i, n: s.enclosures.length } : undefined,
+      }))
+    ),
+    ...extra.map((x): CardItem => ({ ...x, all: [] })),
+  ].sort(
+    (a, b) => (ticketNo.get(a.ticket.id) || 0) - (ticketNo.get(b.ticket.id) || 0) || (a.part?.i || 0) - (b.part?.i || 0)
+  );
   const hiddenCount = roundTickets.length - step1.length;
 
   // 💡 복권 1장 카드 (1장씩 보기)
-  const renderCard = ({ ticket, enclosures }: TicketResult) => {
+  const renderCard = ({ ticket, enclosures, all, part }: CardItem) => {
     const editing = editId === ticket.id;
+    const isFirst = !part || part.i === 0;
     // 💡 선택 해제 전 원래 벽 중, 누르지 않은 번호는 화면에 그대로 유지 (분석에는 반영 안 됨)
-    const nowWalls = new Set(enclosures.flatMap((e) => e.walls.map(cellKey)));
+    const nowWalls = new Set(all.flatMap((e) => e.walls.map(cellKey)));
     const offNow = new Set(appliedOff[ticket.id] || []);
-    const keepWalls = offNow.size === 0
+    const keepAll = offNow.size === 0
       ? []
       : analyzeTicket(ticket, minLen, undefined, undefined, appliedAdd[ticket.id])
           .flatMap((e) => e.walls)
           .filter((p) => !nowWalls.has(cellKey(p)) && !offNow.has(cellKey(p)));
-    const lostDigits = Array.from(new Set(keepWalls.map((p) => p.number % 10)))
-      .filter((d) => !enclosures.some((e) => e.digit === d))
+    const lostDigits = Array.from(new Set(keepAll.map((p) => p.number % 10)))
+      .filter((d) => !all.some((e) => e.digit === d))
       .sort((a, b) => a - b);
+    // 이 카드의 끝수 벽 + (첫 카드에만) 벽이 열려 빠진 끝수의 벽
+    const keepWalls = keepAll.filter(
+      (p) => enclosures.some((e) => e.digit === p.number % 10) || (isFirst && lostDigits.includes(p.number % 10))
+    );
     // 해제한 칸이 이 복권 표 안의 번호인지 (안내 문구용)
     const grid = ticketToGrid(ticket);
     const offInTicket = [...offNow].some((k) => {
@@ -111,13 +141,14 @@ export default function ConnectStep1({
         <div className="flex justify-between items-center gap-2">
           <span className="text-[13px] font-black text-gray-900 dark:text-zinc-100 flex items-center gap-1.5">
             {ticketLabel(ticket, ticketNo.get(ticket.id))}
+            {part && <span className="px-1.5 py-0.5 rounded bg-[#1E3A8A] text-white text-[10px] font-black">끝{enclosures[0].digit} · {part.i + 1}/{part.n}</span>}
             {isNew(ticket) && <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[9px] font-black">NEW</span>}
           </span>
           <div className="flex items-center gap-1.5">
             {enclosures.length === 0 ? (
               <span className="px-1.5 py-0.5 rounded bg-gray-400 dark:bg-zinc-600 text-white text-[10px] font-black">연결 없음</span>
             ) : (
-              <span className="text-[11px] font-bold text-amber-500">연결 {enclosures.length}개</span>
+              <span className="text-[11px] font-bold text-amber-500">끝수 {enclosures[0].digit} 연결</span>
             )}
             <button
               onClick={() => toggleEdit(ticket.id, enclosures)}
@@ -167,7 +198,7 @@ export default function ConnectStep1({
             선택 해제한 번호 때문에 벽이 열려 분석에서 빠졌어요. 점선 칸을 누르면 다시 선택돼요.
           </div>
         )}
-        {enclosures.length > 0 && lostDigits.length > 0 && (
+        {enclosures.length > 0 && isFirst && lostDigits.length > 0 && (
           <div className="text-[11px] text-gray-500 dark:text-zinc-400 break-keep">
             끝수 {lostDigits.join(', ')}: 선택 해제로 벽이 열려 분석에서 빠졌어요. 점선 칸을 누르면 다시 선택돼요.
           </div>
@@ -226,10 +257,10 @@ export default function ConnectStep1({
           page={page}
           setPage={setPage}
           renderOne={renderCard}
-          renderSmall={({ ticket, enclosures }) => (
+          renderSmall={({ ticket, enclosures, part }) => (
             <SmallCard
               title={ticketLabel(ticket, ticketNo.get(ticket.id))}
-              sub={enclosures.length > 0 ? enclosures.map((e) => `끝${e.digit}`).join('·') : '연결 없음'}
+              sub={enclosures.length > 0 ? `끝${enclosures[0].digit}${part ? ` (${part.i + 1}/${part.n})` : ''}` : '연결 없음'}
             >
               <ConnectGrid small ticket={ticket} walls={enclosures.flatMap((e) => e.walls)} trapped={enclosures.flatMap((e) => e.cells)} />
             </SmallCard>

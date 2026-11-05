@@ -218,7 +218,7 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
           {view === 'tickets' && <TicketsByDate roundTickets={roundTickets} ticketNo={ticketNo} isNew={isNew} />}
           {view === 'step1' && (
             <ConnectStep1
-              key={`${selectedRound}-${JSON.stringify([appliedOff, appliedAdd])}`}
+              key={selectedRound ?? 'none'}
               roundTickets={roundTickets}
               ticketNo={ticketNo}
               step1={result.step1}

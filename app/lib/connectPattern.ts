@@ -1,4 +1,4 @@
-// 💡 끝자리 연결(벽) · 갇힌 번호 분석 도구 (1~5단계)
+// 💡 끝자리 연결(벽) · 갇힌 번호 분석 도구 (1~3단계)
 import type { Ticket } from '../store/useTicketStore';
 import { ticketToGrid } from './endDigitPattern';
 
@@ -54,11 +54,13 @@ const splitRegions = (R: number, C: number, wall: Set<string>): string[][] => {
  * 💡 한 끝수(digit)로 막힌 구역 찾기
  * 1) 같은 끝수 번호를 벽으로 놓고, 표가 둘 이상으로 나뉘면 가장 큰 구역을 뺀 나머지가 '막힌 구역'
  * 2) 끝자리가 다른 번호가 하나라도 끼어 끊긴 벽은 제외 (완전히 막힌 것만 인정)
- * 3) 벽은 '이어진 벽 전체'로 셈: 같은 벽이 막은 구역들은 하나로 묶어서 보여줌
- * 4) 이어진 벽(같은 끝수 번호)이 minWall개 이상이어야 함
+ * 3) 같은 벽이 막은 구역들은 하나로 묶어서 보여줌
+ * 4) 벽은 갇힌 구역에 직접 맞닿은(가로·세로·대각선) 번호만 셈 — 꼬리처럼 떨어진 벽은 제외
+ *    그 벽이 minWall개 이상이어야 함
  *    (예외: 표 모서리 칸 1개를 대각선 2개가 막은 경우는 2개도 인정)
  * 5) off: 사용자가 '선택 해제'한 칸("행,열") → 벽에서 빼고 일반 칸으로 계산
  * 6) add: 사용자가 '직접 연결'한 칸("행,열" → 끝수) → 그 끝수의 벽으로 계산
+ * 7) 갇힌 구역 안에 섬처럼 떨어진 같은 끝수 번호(바깥과 안 닿음)는 벽이 아니라 갇힌 번호
  */
 export const findEnclosures = (grid: Grid, digit: number, minWall: number, off?: Set<string>, add?: Record<string, number>): Enclosure[] => {
   const R = grid.length;
@@ -82,32 +84,58 @@ export const findEnclosures = (grid: Grid, digit: number, minWall: number, off?:
   const sortCells = (list: GridCell[]) => list.sort((p, q) => p.row - q.row || p.col - q.col);
 
   // ① 벽 번호들을 가로·세로·대각선으로 이어서 '이어진 벽' 묶음으로 나눔
-  const wallGroupOf = new Map<string, number>();
-  const wallGroups: string[][] = [];
-  walls.forEach((start) => {
-    if (wallGroupOf.has(start)) return;
-    const id = wallGroups.length;
-    const group: string[] = [];
-    const stack = [start];
-    wallGroupOf.set(start, id);
-    while (stack.length > 0) {
-      const k = stack.pop()!;
-      group.push(k);
-      const [r, c] = k.split(',').map(Number);
-      N8.forEach(([dy, dx]) => {
-        const nk = key(r + dy, c + dx);
-        if (walls.has(nk) && !wallGroupOf.has(nk)) {
-          wallGroupOf.set(nk, id);
-          stack.push(nk);
-        }
-      });
-    }
-    wallGroups.push(group);
-  });
+  const buildGroups = () => {
+    const groupOf = new Map<string, number>();
+    const groups: string[][] = [];
+    walls.forEach((start) => {
+      if (groupOf.has(start)) return;
+      const id = groups.length;
+      const group: string[] = [];
+      const stack = [start];
+      groupOf.set(start, id);
+      while (stack.length > 0) {
+        const k = stack.pop()!;
+        group.push(k);
+        const [r, c] = k.split(',').map(Number);
+        N8.forEach(([dy, dx]) => {
+          const nk = key(r + dy, c + dx);
+          if (walls.has(nk) && !groupOf.has(nk)) {
+            groupOf.set(nk, id);
+            stack.push(nk);
+          }
+        });
+      }
+      groups.push(group);
+    });
+    return { groupOf, groups };
+  };
+
+  // ①-2 갇힌 구역 '안에 섬처럼 떨어진' 같은 끝수 번호는 벽이 아니라 갇힌 번호로 봄
+  //      (바깥 구역과 전혀 맞닿지 않은 벽 묶음 = 막는 역할을 하지 않음)
+  let { groupOf: wallGroupOf, groups: wallGroups } = buildGroups();
+  let regions = splitRegions(R, C, walls).sort((a, b) => b.length - a.length);
+  // 바깥 구역(가장 큰 구역)은 처음에 정한 것을 끝까지 유지 (섬을 지워도 바깥/안쪽이 뒤바뀌지 않게)
+  const outsideSeed = new Set(regions[0] || []);
+  const outsideFirst = (list: string[][]) => {
+    const i = list.findIndex((rg) => rg.some((k) => outsideSeed.has(k)));
+    return i <= 0 ? list : [list[i], ...list.slice(0, i), ...list.slice(i + 1)];
+  };
+  for (let round = 0; round < 5 && regions.length > 1; round++) {
+    const outside = new Set(regions[0]);
+    const islands = wallGroups.filter((g) =>
+      g.every((k) => {
+        const [r, c] = k.split(',').map(Number);
+        return !N8.some(([dy, dx]) => outside.has(key(r + dy, c + dx)));
+      })
+    );
+    if (islands.length === 0) break;
+    islands.flat().forEach((k) => walls.delete(k));
+    ({ groupOf: wallGroupOf, groups: wallGroups } = buildGroups());
+    regions = outsideFirst(splitRegions(R, C, walls).sort((a, b) => b.length - a.length));
+  }
 
   // ② 벽이 아닌 칸을 구역으로 나누고, 가장 큰 구역을 뺀 나머지 = 막힌 구역
-  const pockets = splitRegions(R, C, walls)
-    .sort((a, b) => b.length - a.length)
+  const pockets = regions
     .slice(1)
     .map((region) => {
       const touched = new Set<number>(); // 이 구역을 막고 있는 '이어진 벽' 번호
@@ -136,14 +164,24 @@ export const findEnclosures = (grid: Grid, digit: number, minWall: number, off?:
     merged.push(into);
   });
 
-  // ④ 이어진 벽 전체 개수가 minWall 이상인 것만 (모서리 예외 포함)
+  // ④ 벽은 '갇힌 구역에 직접 맞닿은 벽'만 남김 (구역과 떨어져 꼬리처럼 이어진 벽은 제외)
+  //    → 그 벽 개수가 minWall 이상인 것만 (모서리 예외 포함)
   return merged
-    .map((m) => ({
-      digit,
-      walls: sortCells(Array.from(m.groups).flatMap((g) => wallGroups[g]).map(toCell)),
-      gap: null,
-      cells: sortCells(m.cells.map(toCell)),
-    }))
+    .map((m) => {
+      const pocket = new Set(m.cells);
+      const touching = Array.from(m.groups)
+        .flatMap((g) => wallGroups[g])
+        .filter((k) => {
+          const [r, c] = k.split(',').map(Number);
+          return N8.some(([dy, dx]) => pocket.has(key(r + dy, c + dx)));
+        });
+      return {
+        digit,
+        walls: sortCells(touching.map(toCell)),
+        gap: null,
+        cells: sortCells(m.cells.map(toCell)),
+      };
+    })
     .filter((e) => e.walls.length >= minWall || isCornerPair(e, R, C));
 };
 

@@ -141,25 +141,26 @@ function Ball({ n, size = 'md', ring = false }: { n: number; size?: 'sm' | 'md';
   );
 }
 
-// 💡 비교할 출처 1개: 출처 복권의 연결(벽)과, 그 번호들이 갇힌 복권의 칸
-type CompareSource = { key: string; source: Ticket; sourceEnc: Enclosure; cells: GridCell[] };
+// 💡 비교할 출처 1개: 출처 복권의 연결(벽), 갇힌 복권의 연결(벽), 갇힌 칸
+type CompareSource = { key: string; source: Ticket; sourceEnc: Enclosure; targetEnc: Enclosure; cells: GridCell[] };
 
-// 출처(복권+끝수)별로 묶기 (number를 주면 그 번호만)
+// 출처(복권+끝수) · 갇힌 쪽 끝수별로 묶기 (number를 주면 그 번호만)
 const groupSources = (hits: Step2Hit[], number?: number): CompareSource[] => {
   const map = new Map<string, CompareSource>();
   hits.forEach((h) => {
-    const k = `${h.source.id}|${h.sourceEnc.digit}`;
+    const k = `${h.source.id}|${h.sourceEnc.digit}|${h.targetEnc.digit}`;
     const cells = h.cells.filter((c) => number === undefined || c.number === number);
     const cur = map.get(k);
     if (cur) cur.cells = [...cur.cells, ...cells.filter((c) => !cur.cells.some((x) => x.row === c.row && x.col === c.col))];
-    else map.set(k, { key: k, source: h.source, sourceEnc: h.sourceEnc, cells });
+    else map.set(k, { key: k, source: h.source, sourceEnc: h.sourceEnc, targetEnc: h.targetEnc, cells });
   });
   return Array.from(map.values());
 };
 
 // 💡 갇힌 복권 ↔ 출처 복권 나란히 비교 (출처가 많으면 칩·◀▶로 하나씩)
-function CompareCard({ target, targetWalls, sources, ticketNo }: {
-  target: Ticket; targetWalls: GridCell[]; sources: CompareSource[]; ticketNo: Map<string, number>;
+// 두 표 모두 '그 끝수 패턴 하나만' 보여줘서 다른 끝수 패턴과 겹쳐 보이지 않게 함
+function CompareCard({ target, sources, ticketNo }: {
+  target: Ticket; sources: CompareSource[]; ticketNo: Map<string, number>;
 }) {
   const [sel, setSel] = useState(0);
   const i = Math.min(sel, sources.length - 1);
@@ -169,6 +170,7 @@ function CompareCard({ target, targetWalls, sources, ticketNo }: {
   const markCells = cur.sourceEnc.walls.filter((w) => nums.includes(w.number));
   const tNo = ticketNo.get(target.id);
   const sNo = ticketNo.get(cur.source.id);
+  const manyTargetDigits = new Set(sources.map((s) => s.targetEnc.digit)).size > 1;
 
   return (
     <div className="flex flex-col gap-2">
@@ -185,6 +187,7 @@ function CompareCard({ target, targetWalls, sources, ticketNo }: {
               }`}
             >
               {ticketNo.get(s.source.id)}번 끝{s.sourceEnc.digit}
+              {manyTargetDigits && <span className="opacity-75"> → 끝{s.targetEnc.digit}</span>}
             </button>
           ))}
         </div>
@@ -193,11 +196,11 @@ function CompareCard({ target, targetWalls, sources, ticketNo }: {
       {/* 표 2장 나란히 */}
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
-          <span className="text-[10.5px] font-black text-orange-500 truncate">갇힌 복권 ({tNo}번)</span>
-          <ConnectGrid small ticket={target} walls={targetWalls} highlight={cur.cells} />
+          <span className="text-[10.5px] font-black text-orange-500 truncate">갇힌 복권 ({tNo}번 · 끝{cur.targetEnc.digit} 벽 안)</span>
+          <ConnectGrid small ticket={target} walls={cur.targetEnc.walls} highlight={cur.cells} />
         </div>
         <div className="flex flex-col gap-1">
-          <span className="text-[10.5px] font-black text-[#1E3A8A] dark:text-blue-300 truncate">출처 복권 ({sNo}번)</span>
+          <span className="text-[10.5px] font-black text-[#1E3A8A] dark:text-blue-300 truncate">출처 복권 ({sNo}번 · 끝{cur.sourceEnc.digit} 연결)</span>
           <ConnectGrid small ticket={cur.source} walls={cur.sourceEnc.walls} mark={markCells} />
         </div>
       </div>
@@ -247,7 +250,7 @@ function TrappedTicketsFor({ number, hits, ticketNo }: { number: number; hits: S
         renderOne={(list) => (
           <div key={list[0].target.id} className="bg-gray-50 dark:bg-zinc-800/60 border border-gray-200 dark:border-zinc-700/50 rounded-2xl p-3 flex flex-col gap-2">
             <div className="text-[13px] font-black text-gray-900 dark:text-zinc-100">{ticketLabel(list[0].target, ticketNo.get(list[0].target.id))}</div>
-            <CompareCard target={list[0].target} targetWalls={wallsOf(list)} sources={groupSources(list, number)} ticketNo={ticketNo} />
+            <CompareCard target={list[0].target} sources={groupSources(list, number)} ticketNo={ticketNo} />
           </div>
         )}
         renderSmall={(list) => (
@@ -341,7 +344,7 @@ function Step2Card({ item, ticketNo }: { item: Step2Ticket; ticketNo: Map<string
         {item.numbers.map((n) => <Ball key={n} n={n} size="sm" ring />)}
       </div>
       {/* 💡 어디서 온 번호? → 출처 복권과 나란히 비교 */}
-      <CompareCard target={item.target} targetWalls={item.walls} sources={groupSources(item.hits)} ticketNo={ticketNo} />
+      <CompareCard target={item.target} sources={groupSources(item.hits)} ticketNo={ticketNo} />
     </div>
   );
 }
