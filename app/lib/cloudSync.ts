@@ -40,7 +40,11 @@ const friendly = (e: unknown) => {
   if (code.includes('email-already-in-use') || code.includes('invalid-credential') || code.includes('wrong-password'))
     return '비밀번호가 맞지 않아요. 처음 가입할 때 쓴 비밀번호를 입력해 주세요.';
   if (code.includes('too-many-requests')) return '시도가 너무 많아요. 잠시 후 다시 해 주세요.';
-  if (code.includes('network')) return '인터넷 연결을 확인해 주세요.';
+  if (code.includes('network')) {
+    // 자세한 원인(있으면)을 괄호 안에 함께 보여줌 → 문제 찾기용
+    const detail = (e as { customData?: { message?: string } })?.customData?.message;
+    return `인터넷 연결을 확인해 주세요.${detail ? ` (${detail})` : ''}`;
+  }
   if (code.includes('permission-denied')) return '저장소 권한이 없어요. Firebase 보안 규칙을 확인해 주세요.';
   return e instanceof Error ? e.message : '알 수 없는 오류가 났어요.';
 };
