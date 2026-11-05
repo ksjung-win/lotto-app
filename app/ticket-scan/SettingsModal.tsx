@@ -5,6 +5,7 @@ import { X, KeyRound, CheckCircle2, XCircle, Loader2, Eye, EyeOff } from 'lucide
 import {
   getGeminiKey, setGeminiKey, clearGeminiKey, getGeminiModel, setGeminiModel, testGemini, DEFAULT_GEMINI_MODEL,
 } from '../lib/geminiReader';
+import SyncSection from './SyncSection';
 
 // 💡 설정 창: 제미나이 API 키 (각자 자기 키를 입력, 이 휴대폰에만 저장)
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
@@ -60,7 +61,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-[360px] max-h-full overflow-y-auto flex flex-col">
         <div className="bg-gray-50 dark:bg-zinc-800 p-3 border-b dark:border-zinc-700 flex justify-between items-center sticky top-0 z-10">
           <h3 className="font-bold text-gray-800 dark:text-zinc-200 ml-1 text-sm flex items-center gap-1.5">
-            <KeyRound size={16} className="text-amber-500" /> 설정 · 제미나이 AI 읽기
+            <KeyRound size={16} className="text-amber-500" /> 설정
           </h3>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-zinc-700">
             <X size={18} className="text-gray-600 dark:text-zinc-300" />
@@ -68,6 +69,10 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="p-4 flex flex-col gap-3">
+          {/* 💡 기기 연동 (PC ↔ 휴대폰) */}
+          <SyncSection />
+
+          <div className="text-[13px] font-black text-gray-800 dark:text-zinc-100 mt-1">제미나이 AI 읽기</div>
           <p className="text-[11.5px] text-gray-600 dark:text-zinc-400 leading-relaxed break-keep">
             QR코드가 없는 사진(유튜브 캡처 등)은 제미나이 AI가 번호를 읽어요. 각자 <b>자기 API 키</b>를 넣어 쓰며, 키는 <b>이 휴대폰에만</b> 저장되고 다른 곳으로 보내지지 않아요.
           </p>

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Home, Search, Settings, ChevronLeft, ChevronRight, X, Eraser, MousePointer2, Layers, Save } from 'lucide-react';
 import { useLottoStore } from '../store/useLottoStore';
 import { useRoundStore, getTodayString, getNextSeq, makeRoundName, getLatestDrawNo } from '../store/useRoundStore';
+import { PALETTE, cellBg, cellText } from '../lib/cellColor';
 
 export default function InputPage() {
   const { boards, focusedCell, setFocusedCell, setCellColor, setCellNumber, resetBoard } = useLottoStore();
@@ -37,15 +38,7 @@ export default function InputPage() {
 
   const numbers1to45 = Array.from({ length: 45 }, (_, i) => i + 1);
   
-  const colors = [
-    { id: 'red', value: 'bg-red-300' },
-    { id: 'orange', value: 'bg-orange-300' },
-    { id: 'yellow', value: 'bg-yellow-300' },
-    { id: 'green', value: 'bg-green-300' },
-    { id: 'blue', value: 'bg-blue-300' },
-    { id: 'brown', value: 'bg-[#5D4037]' },
-    { id: 'navy', value: 'bg-[#1E3A8A]' },
-  ];
+  const colors = PALETTE; // 💡 빨주노초파남보 (app/lib/cellColor.ts)
 
   const getMatchedBoardsForCurrentBoard = () => {
     const currentBoardData = boards[activeBoardIdx] || [];
@@ -217,10 +210,9 @@ export default function InputPage() {
                     
                     <div className="grid grid-cols-6 border-l border-t border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 w-full shadow-sm">
                       {(boards[boardIdx] || Array(30).fill({number: null, color: null})).map((c, cellI) => {
-                        const isDarkBg = c.color === 'bg-[#5D4037]' || c.color === 'bg-[#1E3A8A]';
-                        const textColorClass = c.color ? (isDarkBg ? 'text-white' : 'text-gray-900') : 'text-gray-300 dark:text-zinc-600';
+                        const textColorClass = cellText(c.color) ?? 'text-gray-300 dark:text-zinc-600';
                         return (
-                          <div key={cellI} className={`aspect-square border-r border-b border-gray-300 dark:border-zinc-600 flex items-center justify-center text-[9px] font-bold transition-colors ${c.color || 'bg-white dark:bg-zinc-900'} ${textColorClass}`}>
+                          <div key={cellI} className={`aspect-square border-r border-b border-gray-300 dark:border-zinc-600 flex items-center justify-center text-[9px] font-bold transition-colors ${cellBg(c.color) || 'bg-white dark:bg-zinc-900'} ${textColorClass}`}>
                             {c.number !== null ? c.number : ''}
                           </div>
                         );
@@ -322,7 +314,7 @@ export default function InputPage() {
                 <button
                   key={c.id}
                   onClick={() => setSelectedBrush(c.value)}
-                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 transition-all ${c.value} ${
+                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 transition-all ${cellBg(c.value)}
                     selectedBrush === c.value 
                       ? 'border-amber-500 shadow-md scale-110' 
                       : 'border-transparent'
@@ -337,8 +329,7 @@ export default function InputPage() {
             <div className="grid grid-cols-6 border-l border-t border-gray-300 dark:border-zinc-500 bg-white dark:bg-zinc-900 shadow-sm w-full transition-colors duration-300">
               {activeBoard.map((cell, cellIdx) => {
                 const isFocused = focusedCell?.boardIdx === activeBoardIdx && focusedCell?.cellIdx === cellIdx;
-                const isDarkBg = cell.color === 'bg-[#5D4037]' || cell.color === 'bg-[#1E3A8A]';
-                const textColorClass = cell.color ? (isDarkBg ? 'text-white' : 'text-gray-900') : 'text-gray-900 dark:text-white';
+                const textColorClass = cellText(cell.color) ?? 'text-gray-900 dark:text-white';
 
                 return (
                   <div
@@ -346,7 +337,7 @@ export default function InputPage() {
                     onClick={() => handleCellClick(cellIdx)}
                     className={`
                       aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold text-xl cursor-pointer transition-colors duration-200
-                      ${cell.color ? cell.color : 'bg-white dark:bg-zinc-900'} 
+                      ${cell.color ? cellBg(cell.color) : 'bg-white dark:bg-zinc-900'}
                       ${textColorClass}
                       ${isFocused ? 'ring-inset ring-[3px] ring-amber-500 z-10' : ''}
                     `}
@@ -460,7 +451,7 @@ export default function InputPage() {
           </div>
         )}
 
-        {/* 💡 회차별 분석 저장 팝업 */}
+        from '../store/useRoundStore';{/* 💡 회차별 분석 저장 팝업 */}
         {isSaveModalOpen && (
           <div className="absolute inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-[300px] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">

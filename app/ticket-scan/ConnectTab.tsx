@@ -4,8 +4,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Ticket as TicketIcon, Sparkles, RotateCcw, ChevronRight, LayoutList, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { useTicketStore, Ticket } from '../store/useTicketStore';
 import { pad2 } from '../lib/endDigitPattern';
-import { runConnectAnalysis, recommendCombos, OffMap, AddMap, FlipMap, cleanOff, cleanAdd, cleanFlip } from '../lib/connectPattern';
+import { runConnectAnalysis, recommendCombos, OffMap, AddMap, FlipMap } from '../lib/connectPattern';
 import { verifyConnect } from '../lib/connectVerify';
+import { readEdits, saveEditsLocal, EDITS_REMOTE_EVENT } from '../lib/editsStore';
 import ConnectStep1 from './ConnectStep1';
 import { TicketsByDate, Step2View, Step3View, Step4View, Step5View } from './ConnectViews';
 
@@ -14,10 +15,7 @@ const MIN_OPTIONS = [3, 4, 5, 6]; // 구역을 막는 같은 끝수 번호(벽)�
 
 // 회차별 '마지막으로 확인한 시각' (새로 추가된 복권 표시용, 이 휴대폰에만 저장)
 const seenKey = (round: number) => `lotto-connect-seen-${round}`;
-// 회차별 '선택 해제한 벽 번호'와 '직접 연결한 번호' (이 휴대폰에만 저장)
-const offKey = (round: number) => `lotto-connect-off-${round}`;
-const addKey = (round: number) => `lotto-connect-add-${round}`;
-const flipKey = (round: number) => `lotto-connect-flip-${round}`; // 크기가 같을 때 갇힌 쪽을 바꾼 끝수
+// 회차별 '직접 수정 내용'(선택 해제·직접 연결·갇힌 쪽 바꾸기)은 editsStore에서 저장 (연동 포함)
 
 const readJson = <T,>(k: string): T | null => {
   try {
@@ -70,9 +68,23 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
     handledRound.current = selectedRound;
     setLastSeen(readJson<number>(seenKey(selectedRound)));
     writeJson(seenKey(selectedRound), Date.now());
-    setAppliedOff(cleanOff(readJson<OffMap>(offKey(selectedRound)) || {}));
-    setAppliedAdd(cleanAdd(readJson<AddMap>(addKey(selectedRound)) || {}));
-    setAppliedFlip(cleanFlip(readJson<FlipMap>(flipKey(selectedRound)) || {}));
+    const e = readEdits(selectedRound);
+    setAppliedOff(e.off);
+    setAppliedAdd(e.add);
+    setAppliedFlip(e.flip);
+  }, [selectedRound]);
+
+  // 💡 다른 기기에서 직접 수정한 내용이 연동되어 들어오면 다시 읽기
+  useEffect(() => {
+    const reload = () => {
+      if (selectedRound === null) return;
+      const e = readEdits(selectedRound);
+      setAppliedOff(e.off);
+      setAppliedAdd(e.add);
+      setAppliedFlip(e.flip);
+    };
+    window.addEventListener(EDITS_REMOTE_EVENT, reload);
+    return () => window.removeEventListener(EDITS_REMOTE_EVENT, reload);
   }, [selectedRound]);
 
   const roundTickets = useMemo(
@@ -105,11 +117,7 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
     setAppliedOff(off);
     setAppliedAdd(add);
     setAppliedFlip(flip);
-    if (selectedRound !== null) {
-      writeJson(offKey(selectedRound), off);
-      writeJson(addKey(selectedRound), add);
-      writeJson(flipKey(selectedRound), flip);
-    }
+    if (selectedRound !== null) saveEditsLocal(selectedRound, off, add, flip); // 저장 + 연동
   };
   const resetEdits = () => {
     if (!window.confirm('선택 해제 · 직접 연결 · 갇힌 쪽 바꾸기를 모두 되돌리시겠습니까?')) return;

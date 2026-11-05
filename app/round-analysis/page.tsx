@@ -6,11 +6,11 @@ import { useRouter } from 'next/navigation';
 import { Home, Search, ChevronLeft, ChevronRight, X, Trash2, Download, Square, LayoutGrid, ClipboardList } from 'lucide-react';
 import { useLottoStore, CellData } from '../store/useLottoStore';
 import { useRoundStore, SavedRound } from '../store/useRoundStore';
+import { cellBg, cellText } from '../lib/cellColor';
 
 const ITEMS_PER_PAGE = 6;
 
-// 진한 배경색(갈색, 남색)이면 글자를 흰색으로
-const isDarkColor = (color: string | null) => color === 'bg-[#5D4037]' || color === 'bg-[#1E3A8A]';
+// 💡 칸 색상과 글자색은 app/lib/cellColor.ts 에서 (빨주노초파남보)
 
 // 저장 시각을 보기 좋게 표시 (예: 2026.10.25 14:32)
 const formatSavedAt = (ms: number) => {
@@ -141,21 +141,19 @@ export default function RoundAnalysisPage() {
     >
       {Array.from({ length: 30 }).map((_, i) => {
         const cell = cells[i] || { number: null, color: null };
-        const textColor = cell.color
-          ? isDarkColor(cell.color) ? 'text-white' : 'text-gray-900'
-          : 'text-gray-900 dark:text-white';
+        const textColor = cellText(cell.color) ?? 'text-gray-900 dark:text-white';
         const text = cell.number !== null && cell.number !== undefined ? String(cell.number) : '';
         return size === 'large' ? (
           <div
             key={i}
-            className={`aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold text-xl ${cell.color || 'bg-white dark:bg-zinc-900'} ${textColor}`}
+            className={`aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold text-xl ${cellBg(cell.color) || 'bg-white dark:bg-zinc-900'} ${textColor}`}
           >
             {text}
           </div>
         ) : (
           <div
             key={i}
-            className={`w-full h-full min-h-[16px] rounded-[3px] flex items-center justify-center text-[10px] font-bold ${cell.color || 'bg-gray-200 dark:bg-zinc-700/30'} ${textColor}`}
+            className={`w-full h-full min-h-[16px] rounded-[3px] flex items-center justify-center text-[10px] font-bold ${cellBg(cell.color) || 'bg-gray-200 dark:bg-zinc-700/30'} ${textColor}`}
           >
             {text}
           </div>

@@ -7,6 +7,7 @@ import InputTab from './InputTab';
 import TicketListTab from './TicketListTab';
 import ConnectTab from './ConnectTab';
 import SettingsModal from './SettingsModal';
+import { startCloudSync } from '../lib/cloudSync';
 
 type TabKey = 'input' | 'list' | 'connect';
 
@@ -24,6 +25,7 @@ export default function TicketScanPage() {
   // 휴대폰에 저장된 복권 데이터를 불러온 뒤에 화면을 그림
   useEffect(() => {
     setIsMounted(true);
+    startCloudSync(); // 💡 PC ↔ 휴대폰 연동 (로그인되어 있으면 자동으로 맞춤)
   }, []);
 
   return (

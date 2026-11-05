@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Home, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useLottoStore } from '../store/useLottoStore';
+import { cellBg, cellText } from '../lib/cellColor';
 
 export default function MultiPatternPage() {
   const [currentPage, setCurrentPage] = useState(1);
@@ -53,8 +54,7 @@ export default function MultiPatternPage() {
             const cellColor = cell.color;
             const cellNumber = cell.number;
             
-            const isDarkBg = cellColor === 'bg-[#5D4037]' || cellColor === 'bg-[#1E3A8A]';
-            const textColorClass = cellColor ? (isDarkBg ? 'text-white' : 'text-gray-900') : 'text-gray-900 dark:text-white';
+            const textColorClass = cellText(cellColor) ?? 'text-gray-900 dark:text-white'; // 💡 빨주노초파남보 (app/lib/cellColor.ts)
 
             // 💡 강제 출력: 숫자가 존재하기만 하면 무조건 문자로 렌더링
             const displayText = (cellNumber !== null && cellNumber !== undefined) ? String(cellNumber) : '';
@@ -62,7 +62,7 @@ export default function MultiPatternPage() {
             return (
               <div 
                 key={i} 
-                className={`w-full h-full min-h-[16px] rounded-[3px] flex items-center justify-center text-[10px] font-bold transition-colors ${cellColor ? cellColor : 'bg-zinc-700/30'} ${textColorClass}`}
+                className={`w-full h-full min-h-[16px] rounded-[3px] flex items-center justify-center text-[10px] font-bold transition-colors ${cellColor ? cellBg(cellColor) : 'bg-zinc-700/30'} ${textColorClass}`}
               >
                 {displayText}
               </div>
