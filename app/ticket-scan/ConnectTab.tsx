@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Ticket as TicketIcon, Sparkles, RotateCcw, ChevronRight, LayoutList } from 'lucide-react';
+import { Ticket as TicketIcon, Sparkles, RotateCcw, ChevronRight, LayoutList, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { useTicketStore, Ticket } from '../store/useTicketStore';
 import { pad2 } from '../lib/endDigitPattern';
-import { runConnectAnalysis, recommendCombos, OffMap, AddMap, cleanOff, cleanAdd } from '../lib/connectPattern';
+import { runConnectAnalysis, recommendCombos, OffMap, AddMap, FlipMap, cleanOff, cleanAdd, cleanFlip } from '../lib/connectPattern';
+import { verifyConnect } from '../lib/connectVerify';
 import ConnectStep1 from './ConnectStep1';
 import { TicketsByDate, Step2View, Step3View, Step4View, Step5View } from './ConnectViews';
 
@@ -16,6 +17,7 @@ const seenKey = (round: number) => `lotto-connect-seen-${round}`;
 // 회차별 '선택 해제한 벽 번호'와 '직접 연결한 번호' (이 휴대폰에만 저장)
 const offKey = (round: number) => `lotto-connect-off-${round}`;
 const addKey = (round: number) => `lotto-connect-add-${round}`;
+const flipKey = (round: number) => `lotto-connect-flip-${round}`; // 크기가 같을 때 갇힌 쪽을 바꾼 끝수
 
 const readJson = <T,>(k: string): T | null => {
   try {
@@ -42,6 +44,8 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
   const [lastSeen, setLastSeen] = useState<number | null>(null);
   const [appliedOff, setAppliedOff] = useState<OffMap>({}); // 💡 적용된 선택 해제 (분석에 반영됨)
   const [appliedAdd, setAppliedAdd] = useState<AddMap>({}); // 💡 적용된 직접 연결
+  const [appliedFlip, setAppliedFlip] = useState<FlipMap>({}); // 💡 적용된 '갇힌 쪽 바꾸기'
+  const [showErrors, setShowErrors] = useState(false); // 검증 실패 내용 펼치기
   const step1Dirty = useRef(false); // 1단계 화면에서 적용 안 한 수정이 있는지
   const onDirtyChange = useCallback((d: boolean) => {
     step1Dirty.current = d;
@@ -68,6 +72,7 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
     writeJson(seenKey(selectedRound), Date.now());
     setAppliedOff(cleanOff(readJson<OffMap>(offKey(selectedRound)) || {}));
     setAppliedAdd(cleanAdd(readJson<AddMap>(addKey(selectedRound)) || {}));
+    setAppliedFlip(cleanFlip(readJson<FlipMap>(flipKey(selectedRound)) || {}));
   }, [selectedRound]);
 
   const roundTickets = useMemo(
@@ -80,27 +85,35 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
 
   // 💡 1~4단계 계산 (등록 복권이 늘어나거나, 수정을 적용하면 다시 계산)
   const result = useMemo(
-    () => runConnectAnalysis(roundTickets, minLen, appliedOff, appliedAdd),
-    [roundTickets, minLen, appliedOff, appliedAdd]
+    () => runConnectAnalysis(roundTickets, minLen, appliedOff, appliedAdd, appliedFlip),
+    [roundTickets, minLen, appliedOff, appliedAdd, appliedFlip]
+  );
+  // 💡 자동 검증: 1~4단계 결과를 다른 방법으로 다시 계산해서 맞춰 봄
+  const report = useMemo(
+    () => verifyConnect(roundTickets, minLen, result, appliedOff, appliedAdd),
+    [roundTickets, minLen, result, appliedOff, appliedAdd]
   );
   // 💡 5단계: 추천 조합 20세트
   const combos = useMemo(() => recommendCombos(result, roundTickets).combos, [result, roundTickets]);
 
   const editCount =
     Object.values(appliedOff).reduce((sum, list) => sum + list.length, 0) +
-    Object.values(appliedAdd).reduce((sum, m) => sum + Object.keys(m).length, 0);
+    Object.values(appliedAdd).reduce((sum, m) => sum + Object.keys(m).length, 0) +
+    Object.values(appliedFlip).reduce((sum, list) => sum + list.length, 0);
 
-  const applyEdits = (off: OffMap, add: AddMap) => {
+  const applyEdits = (off: OffMap, add: AddMap, flip: FlipMap) => {
     setAppliedOff(off);
     setAppliedAdd(add);
+    setAppliedFlip(flip);
     if (selectedRound !== null) {
       writeJson(offKey(selectedRound), off);
       writeJson(addKey(selectedRound), add);
+      writeJson(flipKey(selectedRound), flip);
     }
   };
   const resetEdits = () => {
-    if (!window.confirm('선택 해제와 직접 연결을 모두 되돌리시겠습니까?')) return;
-    applyEdits({}, {});
+    if (!window.confirm('선택 해제 · 직접 연결 · 갇힌 쪽 바꾸기를 모두 되돌리시겠습니까?')) return;
+    applyEdits({}, {}, {});
   };
 
   // 적용하지 않은 수정이 있으면 확인 후 이동
@@ -168,6 +181,26 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
         <span className="ml-auto text-[10.5px] text-gray-400 dark:text-zinc-500">누적 {roundTickets.length}장 기준</span>
       </div>
 
+      {/* 💡 자동 검증 결과 */}
+      {report.ok ? (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+          <ShieldCheck size={14} className="shrink-0" />
+          <span className="truncate">검증 완료 · 패턴 {report.patterns}개 · 2단계 {report.links}건 · 4단계 순위 일치</span>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowErrors(!showErrors)}
+          className="text-left flex flex-col gap-1 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-500/40 text-[11px] font-bold text-red-700 dark:text-red-400"
+        >
+          <span className="flex items-center gap-1.5">
+            <ShieldAlert size={14} className="shrink-0" /> 검증 실패 {report.errors.length}건 · {showErrors ? '접기' : '눌러서 보기'}
+          </span>
+          {(showErrors ? report.errors : report.errors.slice(0, 1)).map((e, i) => (
+            <span key={i} className="font-medium break-keep">· {e}</span>
+          ))}
+        </button>
+      )}
+
       {view === 'menu' ? (
         <>
           {/* 💡 새로 추가된 복권 안내 */}
@@ -178,7 +211,7 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
           )}
           {editCount > 0 && (
             <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-zinc-400">
-              <span>1단계에서 직접 수정한 칸 {editCount}개가 반영돼 있어요.</span>
+              <span>1단계에서 직접 수정한 내용 {editCount}건이 반영돼 있어요.</span>
               <button onClick={resetEdits} className="ml-auto shrink-0 flex items-center gap-1 px-2 py-1 rounded-md border border-gray-300 dark:border-zinc-600 font-bold text-gray-600 dark:text-zinc-300">
                 <RotateCcw size={11} /> 되돌리기
               </button>
@@ -225,6 +258,7 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
               minLen={minLen}
               appliedOff={appliedOff}
               appliedAdd={appliedAdd}
+              appliedFlip={appliedFlip}
               isNew={isNew}
               onApply={applyEdits}
               onDirtyChange={onDirtyChange}

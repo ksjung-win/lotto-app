@@ -12,6 +12,7 @@ export type Enclosure = {
   walls: GridCell[];      // 구역을 막고 있는 같은 끝수 번호 (벽)
   gap: GridCell | null;   // 열린 칸 (지금은 사용하지 않음: 완전히 막힌 것만 인정)
   cells: GridCell[];      // 갇힌 번호 (막힌 구역 안의 번호 전체)
+  tie?: GridCell[];       // 💡 벽이 표를 같은 크기로 나눈 경우: 반대쪽(바깥으로 본 쪽) 번호들
 };
 
 const N4 = [[-1, 0], [1, 0], [0, -1], [0, 1]];                                    // 구역이 퍼지는 방향 (상하좌우)
@@ -61,8 +62,10 @@ const splitRegions = (R: number, C: number, wall: Set<string>): string[][] => {
  * 5) off: 사용자가 '선택 해제'한 칸("행,열") → 벽에서 빼고 일반 칸으로 계산
  * 6) add: 사용자가 '직접 연결'한 칸("행,열" → 끝수) → 그 끝수의 벽으로 계산
  * 7) 갇힌 구역 안에 섬처럼 떨어진 같은 끝수 번호(바깥과 안 닿음)는 벽이 아니라 갇힌 번호
+ * 8) 작은 쪽이 갇힌 쪽. 크기가 같으면 표의 마지막 선 쪽(오른쪽·아래쪽)이 갇힌 쪽
+ *    flip: 크기가 같을 때 사용자가 반대쪽을 갇힌 쪽으로 지정한 경우
  */
-export const findEnclosures = (grid: Grid, digit: number, minWall: number, off?: Set<string>, add?: Record<string, number>): Enclosure[] => {
+export const findEnclosures = (grid: Grid, digit: number, minWall: number, off?: Set<string>, add?: Record<string, number>, flip?: boolean): Enclosure[] => {
   const R = grid.length;
   const C = grid[0].length;
   const walls = new Set<string>();
@@ -114,6 +117,9 @@ export const findEnclosures = (grid: Grid, digit: number, minWall: number, off?:
   //      (바깥 구역과 전혀 맞닿지 않은 벽 묶음 = 막는 역할을 하지 않음)
   let { groupOf: wallGroupOf, groups: wallGroups } = buildGroups();
   let regions = splitRegions(R, C, walls).sort((a, b) => b.length - a.length);
+  // 💡 가장 큰 구역 2개의 크기가 같으면 '크기 같음' (기본: 먼저 나오는 왼쪽·위쪽이 바깥)
+  const isTie = regions.length > 1 && regions[0].length === regions[1].length;
+  if (isTie && flip) regions = [regions[1], regions[0], ...regions.slice(2)]; // 사용자가 반대쪽을 갇힌 쪽으로 지정
   // 바깥 구역(가장 큰 구역)은 처음에 정한 것을 끝까지 유지 (섬을 지워도 바깥/안쪽이 뒤바뀌지 않게)
   const outsideSeed = new Set(regions[0] || []);
   const outsideFirst = (list: string[][]) => {
@@ -133,6 +139,8 @@ export const findEnclosures = (grid: Grid, digit: number, minWall: number, off?:
     ({ groupOf: wallGroupOf, groups: wallGroups } = buildGroups());
     regions = outsideFirst(splitRegions(R, C, walls).sort((a, b) => b.length - a.length));
   }
+
+  const tieCells = isTie ? sortCells((regions[0] || []).filter((k) => grid[Number(k.split(',')[0])][Number(k.split(',')[1])] !== null).map(toCell)) : undefined;
 
   // ② 벽이 아닌 칸을 구역으로 나누고, 가장 큰 구역을 뺀 나머지 = 막힌 구역
   const pockets = regions
@@ -180,6 +188,7 @@ export const findEnclosures = (grid: Grid, digit: number, minWall: number, off?:
         walls: sortCells(touching.map(toCell)),
         gap: null,
         cells: sortCells(m.cells.map(toCell)),
+        ...(tieCells ? { tie: tieCells } : {}),
       };
     })
     .filter((e) => e.walls.length >= minWall || isCornerPair(e, R, C));
@@ -193,12 +202,12 @@ const isCornerPair = (e: { walls: GridCell[]; cells: GridCell[] }, R: number, C:
 };
 
 // 복권 1장의 모든 막힌 구역 (digits를 주면 그 끝수만)
-export const analyzeTicket = (ticket: Ticket, minWall: number, digits?: Set<number>, off?: Set<string>, add?: Record<string, number>): Enclosure[] => {
+export const analyzeTicket = (ticket: Ticket, minWall: number, digits?: Set<number>, off?: Set<string>, add?: Record<string, number>, flip?: number[]): Enclosure[] => {
   const grid = ticketToGrid(ticket);
   const result: Enclosure[] = [];
   for (let d = 0; d <= 9; d++) {
     if (digits && !digits.has(d)) continue;
-    result.push(...findEnclosures(grid, d, minWall, off, add));
+    result.push(...findEnclosures(grid, d, minWall, off, add, flip?.includes(d)));
   }
   return result;
 };
@@ -207,6 +216,7 @@ export type TicketResult = { ticket: Ticket; enclosures: Enclosure[] };
 
 export type OffMap = Record<string, string[]>;                 // 복권 id → 선택 해제한 칸 목록 ("행,열")
 export type AddMap = Record<string, Record<string, number>>;   // 복권 id → 직접 연결한 칸 ("행,열" → 끝수)
+export type FlipMap = Record<string, number[]>;                // 복권 id → 크기가 같을 때 반대쪽을 갇힌 쪽으로 지정한 끝수
 
 // 비어 있는 복권은 빼고 순서를 맞춰 정리 (비교·저장용)
 export const cleanOff = (map: OffMap): OffMap => {
@@ -223,6 +233,14 @@ export const cleanAdd = (map: AddMap): AddMap => {
     if (keys.length === 0) return;
     out[id] = {};
     keys.forEach((k) => (out[id][k] = map[id][k]));
+  });
+  return out;
+};
+
+export const cleanFlip = (map: FlipMap): FlipMap => {
+  const out: FlipMap = {};
+  Object.keys(map).sort().forEach((id) => {
+    if (map[id].length > 0) out[id] = [...map[id]].sort((a, b) => a - b);
   });
   return out;
 };
@@ -277,11 +295,11 @@ const uniqCells = (list: GridCell[]) => {
  * 4단계: 그 번호가 몇 장의 복권에서 갇혔는지 세어 많은 순서로 정렬
  * 복권이 새로 등록될 때마다 다시 계산되므로, 월~토 추가 복권이 자동으로 반영됨
  */
-export const runConnectAnalysis = (tickets: Ticket[], minWall: number, offMap: OffMap = {}, addMap: AddMap = {}): ConnectResult => {
+export const runConnectAnalysis = (tickets: Ticket[], minWall: number, offMap: OffMap = {}, addMap: AddMap = {}, flipMap: FlipMap = {}): ConnectResult => {
   // 1단계
   const step1: TicketResult[] = [];
   tickets.forEach((ticket) => {
-    const enclosures = analyzeTicket(ticket, minWall, undefined, new Set(offMap[ticket.id] || []), addMap[ticket.id] || {});
+    const enclosures = analyzeTicket(ticket, minWall, undefined, new Set(offMap[ticket.id] || []), addMap[ticket.id] || {}, flipMap[ticket.id] || []);
     if (enclosures.length > 0) step1.push({ ticket, enclosures });
   });
 

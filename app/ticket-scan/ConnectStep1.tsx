@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { PencilLine, Search } from 'lucide-react';
 import { Ticket } from '../store/useTicketStore';
 import { ticketToGrid } from '../lib/endDigitPattern';
-import { analyzeTicket, Enclosure, TicketResult, OffMap, AddMap, cleanOff, cleanAdd } from '../lib/connectPattern';
+import { analyzeTicket, Enclosure, TicketResult, OffMap, AddMap, FlipMap, cleanOff, cleanAdd, cleanFlip } from '../lib/connectPattern';
 import ConnectGrid, { ticketLabel, cellKey, numsText } from './ConnectGrid';
 import { Pager, SmallCard } from './ConnectViews';
 
@@ -13,9 +13,9 @@ const DIGITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 // 💡 카드 1장 = 복권 1장의 '끝수 하나' 패턴 (끝수가 여러 개면 카드가 여러 장)
 type CardItem = TicketResult & { all: Enclosure[]; part?: { i: number; n: number } };
 
-// 💡 1단계: 연결 패턴 보기 (벽 번호 선택 해제 · 직접 연결 · 적용)
+// 💡 1단계: 연결 패턴 보기 (벽 번호 선택 해제 · 직접 연결 · 크기 같을 때 갇힌 쪽 바꾸기 · 적용)
 export default function ConnectStep1({
-  roundTickets, ticketNo, step1, minLen, appliedOff, appliedAdd, isNew, onApply, onDirtyChange,
+  roundTickets, ticketNo, step1, minLen, appliedOff, appliedAdd, appliedFlip, isNew, onApply, onDirtyChange,
 }: {
   roundTickets: Ticket[];
   ticketNo: Map<string, number>;
@@ -23,12 +23,14 @@ export default function ConnectStep1({
   minLen: number;
   appliedOff: OffMap;
   appliedAdd: AddMap;
+  appliedFlip: FlipMap;
   isNew: (t: Ticket) => boolean;
-  onApply: (off: OffMap, add: AddMap) => void;
+  onApply: (off: OffMap, add: AddMap, flip: FlipMap) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const [draftOff, setDraftOff] = useState<OffMap>(appliedOff); // 💡 아직 적용 안 한 선택 해제
   const [draftAdd, setDraftAdd] = useState<AddMap>(appliedAdd); // 💡 아직 적용 안 한 직접 연결
+  const [draftFlip, setDraftFlip] = useState<FlipMap>(appliedFlip); // 💡 아직 적용 안 한 '갇힌 쪽 바꾸기'
   const [editId, setEditId] = useState<string | null>(null);       // 직접 연결 중인 복권
   const [editDigit, setEditDigit] = useState<number | null>(null); // 직접 연결할 끝수
   const [showAll, setShowAll] = useState(false);                   // 연결 없는 복권도 보기
@@ -36,17 +38,19 @@ export default function ConnectStep1({
 
   const isDirty =
     JSON.stringify(cleanOff(draftOff)) !== JSON.stringify(appliedOff) ||
-    JSON.stringify(cleanAdd(draftAdd)) !== JSON.stringify(appliedAdd);
+    JSON.stringify(cleanAdd(draftAdd)) !== JSON.stringify(appliedAdd) ||
+    JSON.stringify(cleanFlip(draftFlip)) !== JSON.stringify(appliedFlip);
   useEffect(() => {
     onDirtyChange(isDirty);
   }, [isDirty, onDirtyChange]);
 
   // 💡 [적용]·[모두 되돌리기] 후: 보던 페이지는 그대로 두고, 수정 내용만 새로 맞춤
-  const [seen, setSeen] = useState({ appliedOff, appliedAdd });
-  if (seen.appliedOff !== appliedOff || seen.appliedAdd !== appliedAdd) {
-    setSeen({ appliedOff, appliedAdd });
+  const [seen, setSeen] = useState({ appliedOff, appliedAdd, appliedFlip });
+  if (seen.appliedOff !== appliedOff || seen.appliedAdd !== appliedAdd || seen.appliedFlip !== appliedFlip) {
+    setSeen({ appliedOff, appliedAdd, appliedFlip });
     setDraftOff(appliedOff);
     setDraftAdd(appliedAdd);
+    setDraftFlip(appliedFlip);
     setEditId(null);
   }
 
@@ -61,6 +65,13 @@ export default function ConnectStep1({
       if (digit === null) delete cur[k];
       else cur[k] = digit;
       return { ...prev, [ticketId]: cur };
+    });
+
+  // 💡 크기가 같을 때: 이 끝수의 갇힌 쪽을 바꿀지(true) 처음대로 둘지(false)
+  const setFlip = (ticketId: string, digit: number, on: boolean) =>
+    setDraftFlip((prev) => {
+      const cur = (prev[ticketId] || []).filter((d) => d !== digit);
+      return { ...prev, [ticketId]: on ? [...cur, digit] : cur };
     });
 
   // 칸을 눌렀을 때: 직접 연결한 칸 → 취소 / 벽·해제 칸 → 해제·선택 / 그 밖의 칸 → (직접 연결 중이면) 벽으로 추가
@@ -114,7 +125,7 @@ export default function ConnectStep1({
     const offNow = new Set(appliedOff[ticket.id] || []);
     const keepAll = offNow.size === 0
       ? []
-      : analyzeTicket(ticket, minLen, undefined, undefined, appliedAdd[ticket.id])
+      : analyzeTicket(ticket, minLen, undefined, undefined, appliedAdd[ticket.id], appliedFlip[ticket.id])
           .flatMap((e) => e.walls)
           .filter((p) => !nowWalls.has(cellKey(p)) && !offNow.has(cellKey(p)));
     const lostDigits = Array.from(new Set(keepAll.map((p) => p.number % 10)))
@@ -130,6 +141,27 @@ export default function ConnectStep1({
       const [r, c] = k.split(',').map(Number);
       return grid[r]?.[c] != null;
     });
+    // 💡 크기가 같은 패턴: 반대쪽 번호를 누르면 [적용] 후 그쪽이 갇힌 쪽이 됨
+    const tieEnc = enclosures.find((e) => e.tie);
+    const flipNow = !!tieEnc && (appliedFlip[ticket.id] || []).includes(tieEnc.digit);
+    const flipDraft = !!tieEnc && (draftFlip[ticket.id] || []).includes(tieEnc.digit);
+    const tieOther = new Set((tieEnc?.tie || []).map(cellKey));
+    const tieMine = new Set((tieEnc?.cells || []).map(cellKey));
+    // 💡 미리 보기: 바꾼 상태로 실제로 다시 계산해서, [적용] 후 갇힌 번호가 될 칸을 그대로 보여줌 (섬 번호 포함)
+    const pendingCells = tieEnc && flipDraft !== flipNow
+      ? analyzeTicket(
+          ticket, minLen, new Set([tieEnc.digit]), new Set(appliedOff[ticket.id] || []), appliedAdd[ticket.id],
+          flipDraft ? [tieEnc.digit] : []
+        ).flatMap((e) => e.cells)
+      : [];
+    const onTap = (k: string, isWall: boolean) => {
+      const touched = isWall || draftAdd[ticket.id]?.[k] !== undefined || (draftOff[ticket.id] || []).includes(k);
+      if (tieEnc && !editing && !touched) {
+        if (tieOther.has(k)) return setFlip(ticket.id, tieEnc.digit, !flipNow); // 반대쪽 → 바꾸기
+        if (tieMine.has(k)) return setFlip(ticket.id, tieEnc.digit, flipNow);   // 지금 쪽 → 바꾸기 취소
+      }
+      tapCell(ticket.id, k, isWall);
+    };
 
     return (
       <div
@@ -142,6 +174,7 @@ export default function ConnectStep1({
           <span className="text-[13px] font-black text-gray-900 dark:text-zinc-100 flex items-center gap-1.5">
             {ticketLabel(ticket, ticketNo.get(ticket.id))}
             {part && <span className="px-1.5 py-0.5 rounded bg-[#1E3A8A] text-white text-[10px] font-black">끝{enclosures[0].digit} · {part.i + 1}/{part.n}</span>}
+            {tieEnc && <span className="px-1.5 py-0.5 rounded bg-yellow-300 text-gray-900 text-[10px] font-black">크기 같음</span>}
             {isNew(ticket) && <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[9px] font-black">NEW</span>}
           </span>
           <div className="flex items-center gap-1.5">
@@ -189,10 +222,19 @@ export default function ConnectStep1({
           trapped={enclosures.flatMap((e) => e.cells)}
           off={draftOff[ticket.id] || []}
           add={draftAdd[ticket.id] || {}}
+          swap={tieEnc && !editing ? [...tieEnc.tie!, ...tieEnc.cells] : []}
+          pending={tieEnc && flipDraft !== flipNow ? pendingCells : []}
           editing={editing}
           editDigit={editDigit}
-          onTap={(k, isWall) => tapCell(ticket.id, k, isWall)}
+          onTap={onTap}
         />
+        {tieEnc && (
+          <div className="rounded-lg px-2.5 py-2 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-400/50 text-[11px] font-bold text-gray-700 dark:text-zinc-200 break-keep">
+            {flipDraft !== flipNow
+              ? '[적용]을 누르면 점선 쪽이 갇힌 쪽으로 바뀌어요. 노란 쪽 번호를 누르면 취소돼요.'
+              : `벽이 표를 같은 크기로 나눴어요. ${flipNow ? '직접 지정한 쪽' : '마지막 선 쪽(오른쪽·아래쪽)'}이 갇힌 쪽이에요. 반대쪽 번호를 누르면 바꿀 수 있어요.`}
+          </div>
+        )}
         {enclosures.length === 0 && offInTicket && (
           <div className="text-[11px] text-gray-500 dark:text-zinc-400 break-keep">
             선택 해제한 번호 때문에 벽이 열려 분석에서 빠졌어요. 점선 칸을 누르면 다시 선택돼요.
@@ -230,7 +272,7 @@ export default function ConnectStep1({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[11px] text-gray-500 dark:text-zinc-400 leading-relaxed break-keep">
-        끝자리가 같은 번호가 벽처럼 이어져 한 구역을 완전히 막은 복권이에요. 표 모서리 칸 1개를 대각선 2개가 막은 경우도 포함해요. 1장씩 보기에서 벽 번호를 누르면 선택 해제, [직접 연결]로 벽을 추가한 뒤 [적용]을 누르세요.
+        끝자리가 같은 번호가 벽처럼 이어져 한 구역을 완전히 막은 복권이에요. 표 모서리 칸 1개를 대각선 2개가 막은 경우도 포함해요. 1장씩 보기에서 벽 번호를 누르면 선택 해제, [직접 연결]로 벽을 추가한 뒤 [적용]을 누르세요. 양쪽 크기가 같으면 마지막 선 쪽이 갇힌 쪽이고, 반대쪽 번호를 눌러 바꿀 수 있어요.
       </p>
 
       {hiddenCount > 0 && (
@@ -275,6 +317,7 @@ export default function ConnectStep1({
             onClick={() => {
               setDraftOff(appliedOff);
               setDraftAdd(appliedAdd);
+              setDraftFlip(appliedFlip);
               setEditId(null);
             }}
             className="py-2.5 rounded-xl bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 text-sm font-bold active:scale-95"
@@ -282,7 +325,7 @@ export default function ConnectStep1({
             취소
           </button>
           <button
-            onClick={() => onApply(cleanOff(draftOff), cleanAdd(draftAdd))}
+            onClick={() => onApply(cleanOff(draftOff), cleanAdd(draftAdd), cleanFlip(draftFlip))}
             className="py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold active:scale-95"
           >
             적용
