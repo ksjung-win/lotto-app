@@ -3,6 +3,7 @@
 import type { Ticket } from '../store/useTicketStore';
 import { syncKeyOf } from '../store/useTicketStore';
 import type { OffMap, AddMap, FlipMap } from './connectPattern';
+import type { Snapshot } from '../store/useSnapshotStore';
 
 // 저장소의 복권 1건: 살아 있는 복권 또는 삭제 기록
 export type RemoteTicket = { ticket: Ticket | null; deleted: boolean; time: number };
@@ -140,4 +141,25 @@ export const mergeEdits = (local: Map<string, EditsDoc>, remote: Map<string, Edi
     }
   });
   return { writeLocal, uploads };
+};
+
+/**
+ * 지난 회차 고정 기록 합치기: 저장소에 먼저 올라간 기록이 기준 (저장소에 있으면 항상 그것을 씀)
+ * → 한 번 확정되어 올라간 기록은 어느 기기에서도 바뀌지 않음
+ */
+export const mergeSnapshots = (local: Record<string, Snapshot>, remote: Map<string, Snapshot>) => {
+  const merged: Record<string, Snapshot> = { ...local };
+  const uploads: Snapshot[] = [];
+  let changed = false;
+  new Set([...Object.keys(local), ...remote.keys()]).forEach((round) => {
+    const L = local[round];
+    const R = remote.get(round);
+    if (R) {
+      if (!L || L.frozenAt !== R.frozenAt) {
+        merged[round] = R;
+        changed = true;
+      }
+    } else if (L) uploads.push(L);
+  });
+  return { merged, uploads, changed };
 };

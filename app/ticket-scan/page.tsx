@@ -8,6 +8,7 @@ import TicketListTab from './TicketListTab';
 import ConnectTab from './ConnectTab';
 import SettingsModal from './SettingsModal';
 import { startCloudSync } from '../lib/cloudSync';
+import { startAutoFreeze } from '../lib/drawSnapshot';
 
 type TabKey = 'input' | 'list' | 'connect';
 
@@ -26,6 +27,7 @@ export default function TicketScanPage() {
   useEffect(() => {
     setIsMounted(true);
     startCloudSync(); // 💡 PC ↔ 휴대폰 연동 (로그인되어 있으면 자동으로 맞춤)
+    startAutoFreeze(); // 💡 추첨이 끝난 회차 기록 자동 확정 (지난 회차 결과 고정)
   }, []);
 
   return (

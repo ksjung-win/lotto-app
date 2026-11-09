@@ -8,7 +8,8 @@ import {
 import { collection, doc, onSnapshot, writeBatch } from 'firebase/firestore';
 import { getFirebase, firebaseReady } from './firebase';
 import { useTicketStore } from '../store/useTicketStore';
-import { mergeTickets, mergeEdits, remapEdits, RemoteTicket, EditsDoc } from './syncMerge';
+import { mergeTickets, mergeEdits, remapEdits, mergeSnapshots, RemoteTicket, EditsDoc } from './syncMerge';
+import { useSnapshotStore, Snapshot } from '../store/useSnapshotStore';
 import { readEdits, saveEditsFromSync, listEditRounds, EDITS_LOCAL_EVENT } from './editsStore';
 
 type SyncState = 'off' | 'connecting' | 'ok' | 'error';
@@ -18,14 +19,16 @@ export const useSyncStatus = create<{
   lastSync: number | null;
   error: string | null;
   cloudCount: number; // 저장소에 있는 복권 수 (삭제 기록 제외)
-}>(() => ({ email: null, state: 'off', lastSync: null, error: null, cloudCount: 0 }));
+  checked: boolean;   // 로그인 상태 확인이 끝났는지
+}>(() => ({ email: null, state: 'off', lastSync: null, error: null, cloudCount: 0, checked: !firebaseReady }));
 
 let started = false;
 let uid: string | null = null;
 let stopFns: (() => void)[] = [];
 let remoteTickets = new Map<string, RemoteTicket>();
 let remoteEdits = new Map<string, EditsDoc>();
-let ready = { tickets: false, edits: false };
+let remoteSnaps = new Map<string, Snapshot>();
+let ready = { tickets: false, edits: false, snaps: false };
 let timer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let again = false;
@@ -57,10 +60,10 @@ export const startCloudSync = () => {
   onAuthStateChanged(auth, (user) => {
     stop();
     if (user) {
-      setStatus({ email: user.email, state: 'connecting', error: null });
+      setStatus({ email: user.email, state: 'connecting', error: null, lastSync: null, checked: true });
       begin(user.uid);
     } else {
-      setStatus({ email: null, state: 'off', error: null, cloudCount: 0 });
+      setStatus({ email: null, state: 'off', error: null, cloudCount: 0, checked: true });
     }
   });
 };
@@ -99,7 +102,8 @@ const stop = () => {
   uid = null;
   remoteTickets = new Map();
   remoteEdits = new Map();
-  ready = { tickets: false, edits: false };
+  remoteSnaps = new Map();
+  ready = { tickets: false, edits: false, snaps: false };
 };
 
 const begin = (userId: string) => {
@@ -130,6 +134,18 @@ const begin = (userId: string) => {
       onErr
     )
   );
+  stopFns.push(
+    onSnapshot(
+      collection(db, 'users', userId, 'snapshots'),
+      (snap) => {
+        remoteSnaps = new Map(snap.docs.map((d) => [d.id, d.data() as Snapshot]));
+        ready.snaps = true;
+        schedule();
+      },
+      onErr
+    )
+  );
+  stopFns.push(useSnapshotStore.subscribe(() => schedule()));
   // 이 기기에서 복권이 바뀌거나 직접 수정을 적용하면 올리기
   stopFns.push(useTicketStore.subscribe(() => schedule()));
   const onLocalEdits = () => schedule();
@@ -143,7 +159,7 @@ const schedule = (ms = 400) => {
 };
 
 const run = async () => {
-  if (!uid || !ready.tickets || !ready.edits) return;
+  if (!uid || !ready.tickets || !ready.edits || !ready.snaps) return;
   if (running) {
     again = true;
     return;
@@ -175,10 +191,16 @@ const run = async () => {
     const me2 = mergeEdits(localEdits, remoteEdits);
     me2.writeLocal.forEach(({ round, doc: d }) => saveEditsFromSync(round, d));
 
+    // ③-2 지난 회차 고정 기록 합치기 (먼저 확정한 기록이 기준, 덮어쓰지 않음)
+    const ss = useSnapshotStore.getState();
+    const ms = mergeSnapshots(ss.snapshots, remoteSnaps);
+    if (ms.changed) ss.replaceAll(ms.merged);
+
     // ④ 저장소에 올리기 (한 번에 최대 400건씩)
     const ops: { path: string[]; data: object }[] = [
       ...m.uploads.map((u) => ({ path: ['users', me, 'tickets', u.key], data: u.doc })),
       ...me2.uploads.map((u) => ({ path: ['users', me, 'edits', u.round], data: u.doc })),
+      ...ms.uploads.map((u) => ({ path: ['users', me, 'snapshots', String(u.round)], data: u })),
     ];
     for (let i = 0; i < ops.length; i += 400) {
       const batch = writeBatch(db);

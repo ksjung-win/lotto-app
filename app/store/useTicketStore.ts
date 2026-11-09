@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { isRoundLocked } from './useSnapshotStore';
 
 // 💡 복권 1게임 (A~E 중 하나)
 export type LottoGame = {
@@ -17,7 +18,7 @@ export type Ticket = {
   createdAt: number;        // 등록 시각
 };
 
-export type AddResult = 'added' | 'duplicate';
+export type AddResult = 'added' | 'duplicate' | 'locked'; // locked = 추첨이 끝나 기록이 확정된 회차
 
 interface TicketStore {
   tickets: Ticket[];
@@ -45,6 +46,7 @@ export const useTicketStore = create<TicketStore>()(
       deleted: {},
 
       addTicket: (data) => {
+        if (isRoundLocked(data.round)) return 'locked'; // 💡 확정된 회차는 추가 불가
         // 같은 회차에서 TR번호(앞 10자리)가 같거나, TR이 없으면 번호가 모두 같으면 중복
         const trKey = (tr: string | null) => (tr ? tr.slice(0, 10) : '');
         const exists = get().tickets.some((t) =>
@@ -70,12 +72,15 @@ export const useTicketStore = create<TicketStore>()(
         set((state) => {
           const now = Date.now();
           const deleted = { ...state.deleted };
-          state.tickets.filter((t) => t.id === id).forEach((t) => (deleted[syncKeyOf(t)] = now));
+          const target = state.tickets.find((t) => t.id === id);
+          if (!target || isRoundLocked(target.round)) return state; // 💡 확정된 회차는 삭제 불가
+          deleted[syncKeyOf(target)] = now;
           return { tickets: state.tickets.filter((t) => t.id !== id), deleted };
         }),
 
       deleteRound: (round) =>
         set((state) => {
+          if (isRoundLocked(round)) return state; // 💡 확정된 회차는 삭제 불가
           const now = Date.now();
           const deleted = { ...state.deleted };
           state.tickets.filter((t) => t.round === round).forEach((t) => (deleted[syncKeyOf(t)] = now));

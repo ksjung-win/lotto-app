@@ -126,7 +126,12 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
       label,
       status: res === 'added' ? 'ok' : 'dup',
       title: `${parsed.round}회 · TR …${trShort}`,
-      detail: res === 'added' ? `${parsed.games.length}게임 등록 완료` : '이미 등록된 복권이라 건너뛰었어요',
+      detail:
+        res === 'added'
+          ? `${parsed.games.length}게임 등록 완료`
+          : res === 'locked'
+          ? '추첨이 끝나 기록이 확정된 회차라 등록할 수 없어요'
+          : '이미 등록된 복권이라 건너뛰었어요',
     };
   };
 
@@ -259,20 +264,22 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     const games: LottoGame[] = filled.map((numbers, i) => ({ label: GAME_LABELS[i], numbers }));
     const tr = manualTr.replace(/\D/g, '') || null;
     const res = addTicket({ round, tr, games, source: manualSource });
-    if (res === 'duplicate') {
+    if (res === 'duplicate' || res === 'locked') {
       const name = `${round}회${tr ? ` TR …${tr.slice(0, 10).slice(-4)}` : ''}`;
+      // 💡 locked = 추첨이 끝나 기록이 확정된 회차
+      const why = res === 'locked' ? '추첨이 끝나 기록이 확정된 회차라 등록할 수 없어요' : '이미 등록된 복권이에요';
       if (!manualFailKey) {
         // 그냥 직접 입력한 경우: 알리고 화면에 머물러 고칠 수 있게
-        alert(`${name}는 이미 등록된 복권이에요.`);
+        alert(`${name}는 ${why}.`);
         return;
       }
-      // 💡 사진에서 읽은 복권: 알리고 '중복'으로 바꾼 뒤 다음 복권으로 넘어감
-      alert(`${name}는 이미 등록된 복권이에요. 이 사진은 건너뛰고 다음 복권으로 넘어갈게요.`);
+      // 💡 사진에서 읽은 복권: 알리고 '건너뜀'으로 바꾼 뒤 다음 복권으로 넘어감
+      alert(`${name}는 ${why}. 이 사진은 건너뛰고 다음 복권으로 넘어갈게요.`);
       const dupItem = (r: ResultItem): ResultItem => ({
         ...r,
         status: 'dup',
-        title: `${r.label || '사진'}: 이미 등록된 복권 · ${name}`,
-        detail: '이미 등록돼 있어서 건너뛰었어요.',
+        title: `${r.label || '사진'}: ${res === 'locked' ? '확정된 회차' : '이미 등록된 복권'} · ${name}`,
+        detail: res === 'locked' ? '기록이 확정된 회차라 건너뛰었어요.' : '이미 등록돼 있어서 건너뛰었어요.',
         ai: undefined,
       });
       setResults((prev) => prev.map((r) => (r.key === manualFailKey ? dupItem(r) : r)));

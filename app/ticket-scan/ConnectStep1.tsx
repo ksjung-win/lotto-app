@@ -15,7 +15,7 @@ type CardItem = TicketResult & { all: Enclosure[]; part?: { i: number; n: number
 
 // 💡 1단계: 연결 패턴 보기 (벽 번호 선택 해제 · 직접 연결 · 크기 같을 때 갇힌 쪽 바꾸기 · 적용)
 export default function ConnectStep1({
-  roundTickets, ticketNo, step1, minLen, appliedOff, appliedAdd, appliedFlip, isNew, onApply, onDirtyChange,
+  roundTickets, ticketNo, step1, minLen, appliedOff, appliedAdd, appliedFlip, locked = false, isNew, onApply, onDirtyChange,
 }: {
   roundTickets: Ticket[];
   ticketNo: Map<string, number>;
@@ -24,6 +24,7 @@ export default function ConnectStep1({
   appliedOff: OffMap;
   appliedAdd: AddMap;
   appliedFlip: FlipMap;
+  locked?: boolean; // 💡 추첨이 끝나 기록이 확정된 회차 → 수정 불가 (보기만)
   isNew: (t: Ticket) => boolean;
   onApply: (off: OffMap, add: AddMap, flip: FlipMap) => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -183,14 +184,14 @@ export default function ConnectStep1({
             ) : (
               <span className="text-[11px] font-bold text-amber-500">끝수 {enclosures[0].digit} 연결</span>
             )}
-            <button
+            {!locked && <button
               onClick={() => toggleEdit(ticket.id, enclosures)}
               className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10.5px] font-bold border ${
                 editing ? 'bg-orange-500 text-white border-orange-500' : 'bg-white dark:bg-zinc-900 text-orange-500 border-orange-400/60'
               }`}
             >
               <PencilLine size={11} /> {editing ? '닫기' : '직접 연결'}
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -222,13 +223,13 @@ export default function ConnectStep1({
           trapped={enclosures.flatMap((e) => e.cells)}
           off={draftOff[ticket.id] || []}
           add={draftAdd[ticket.id] || {}}
-          swap={tieEnc && !editing ? [...tieEnc.tie!, ...tieEnc.cells] : []}
+          swap={tieEnc && !editing && !locked ? [...tieEnc.tie!, ...tieEnc.cells] : []}
           pending={tieEnc && flipDraft !== flipNow ? pendingCells : []}
           editing={editing}
           editDigit={editDigit}
-          onTap={onTap}
+          onTap={locked ? undefined : onTap}
         />
-        {tieEnc && (
+        {tieEnc && !locked && (
           <div className="rounded-lg px-2.5 py-2 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-400/50 text-[11px] font-bold text-gray-700 dark:text-zinc-200 break-keep">
             {flipDraft !== flipNow
               ? '[적용]을 누르면 점선 쪽이 갇힌 쪽으로 바뀌어요. 노란 쪽 번호를 누르면 취소돼요.'
@@ -271,6 +272,11 @@ export default function ConnectStep1({
 
   return (
     <div className="flex flex-col gap-3">
+      {locked && (
+        <div className="rounded-xl px-3 py-2 bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-zinc-600 text-[11.5px] font-bold text-gray-700 dark:text-zinc-200 break-keep">
+          🔒 추첨이 끝나 기록이 확정된 회차예요. 결과가 바뀌지 않도록 수정할 수 없어요. (보기만 가능)
+        </div>
+      )}
       <p className="text-[11px] text-gray-500 dark:text-zinc-400 leading-relaxed break-keep">
         끝자리가 같은 번호가 벽처럼 이어져 한 구역을 완전히 막은 복권이에요. 표 모서리 칸 1개를 대각선 2개가 막은 경우도 포함해요. 1장씩 보기에서 벽 번호를 누르면 선택 해제, [직접 연결]로 벽을 추가한 뒤 [적용]을 누르세요. 양쪽 크기가 같으면 마지막 선 쪽이 갇힌 쪽이고, 반대쪽 번호를 눌러 바꿀 수 있어요.
       </p>

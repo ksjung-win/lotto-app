@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trash2, LayoutGrid, List, Ticket as TicketIcon } from 'lucide-react';
 import { useTicketStore } from '../store/useTicketStore';
+import { useSnapshotStore } from '../store/useSnapshotStore';
 import { getBallColor, pad2, ticketToGrid } from '../lib/endDigitPattern';
 
 // 등록 시각 표시 (예: 10/27 13:25)
@@ -14,6 +15,7 @@ const formatTime = (ms: number) => {
 
 export default function TicketListTab({ onGoToInput }: { onGoToInput: () => void }) {
   const { tickets, deleteTicket, deleteRound } = useTicketStore();
+  const snapshots = useSnapshotStore((st) => st.snapshots); // 💡 기록이 확정된 회차는 삭제 잠금
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
   const [gridViewIds, setGridViewIds] = useState<string[]>([]); // 표로 보기 중인 복권
 
@@ -58,6 +60,7 @@ export default function TicketListTab({ onGoToInput }: { onGoToInput: () => void
   }
 
   const selectedInfo = roundList.find((r) => r.round === selectedRound);
+  const locked = selectedRound !== null && !!snapshots[selectedRound];
 
   return (
     <div className="flex flex-col gap-3 pb-4">
@@ -73,7 +76,7 @@ export default function TicketListTab({ onGoToInput }: { onGoToInput: () => void
                 : 'bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-400 border-gray-200 dark:border-zinc-700'
             }`}
           >
-            {round}회 <span className="opacity-75">({count}장·{games}게임)</span>
+          {snapshots[round] && '🔒'}{round}회 <span className="opacity-75">({count}장·{games}게임)</span>
           </button>
         ))}
       </div>
@@ -82,16 +85,20 @@ export default function TicketListTab({ onGoToInput }: { onGoToInput: () => void
         <span className="text-xs font-bold text-gray-500 dark:text-zinc-400">
           <span className="text-amber-500">{selectedRound}회</span> 복권 {selectedInfo?.count}장 · {selectedInfo?.games}게임
         </span>
-        <button
-          onClick={() => {
-            if (selectedRound !== null && window.confirm(`${selectedRound}회 복권 ${selectedInfo?.count}장을 모두 삭제하시겠습니까?`)) {
-              deleteRound(selectedRound);
-            }
-          }}
-          className="text-[11px] font-bold text-red-500 px-2 py-1 rounded-md border border-red-500/30"
-        >
-          회차 전체 삭제
-        </button>
+         {locked ? (
+          <span className="text-[11px] font-bold text-gray-500 dark:text-zinc-400">🔒 기록 확정 · 삭제 불가</span>
+        ) : (
+          <button
+            onClick={() => {
+              if (selectedRound !== null && window.confirm(`${selectedRound}회 복권 ${selectedInfo?.count}장을 모두 삭제하시겠습니까?`)) {
+                deleteRound(selectedRound);
+              }
+            }}
+            className="text-[11px] font-bold text-red-500 px-2 py-1 rounded-md border border-red-500/30"
+          >
+            회차 전체 삭제
+          </button>
+        )}
       </div>
 
       {/* 💡 복권 카드 */}
@@ -117,12 +124,14 @@ export default function TicketListTab({ onGoToInput }: { onGoToInput: () => void
                   {isGrid ? <List size={12} /> : <LayoutGrid size={12} />}
                   {isGrid ? '번호로' : '표로'}
                 </button>
-                <button
-                  onClick={() => window.confirm(`${idx + 1}번 복권(${trShort})을 삭제하시겠습니까?`) && deleteTicket(t.id)}
-                  className="p-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-red-500/30 text-red-500"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {!locked && (
+                  <button
+                    onClick={() => window.confirm(`${idx + 1}번 복권(${trShort})을 삭제하시겠습니까?`) && deleteTicket(t.id)}
+                    className="p-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-red-500/30 text-red-500"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </div>
 
