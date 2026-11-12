@@ -7,7 +7,7 @@ import { GridCell } from '../lib/connectPattern';
 
 // 💡 연결 분석 화면들이 함께 쓰는 도구
 export const ticketLabel = (ticket: Ticket, no?: number) =>
-  `${no !== undefined ? `${no}. ` : ''}${ticket.tr ? `TR …${ticket.tr.slice(0, 10).slice(-4)}` : '직접 입력'}`;
+  `${no !== undefined ? `${no}. ` : ''}${ticket.name ? ticket.name : ticket.tr ? `TR …${ticket.tr.slice(0, 10).slice(-4)}` : '직접 입력'}`; // 💡 수동 입력은 파일명
 export const cellKey = (p: { row: number; col: number }) => `${p.row},${p.col}`;
 export const numsText = (cells: GridCell[]) => cells.map((c) => pad2(c.number)).join('·');
 

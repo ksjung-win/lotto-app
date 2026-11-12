@@ -104,7 +104,7 @@ export default function TicketListTab({ onGoToInput }: { onGoToInput: () => void
       {/* 💡 복권 카드 */}
       {items.map((t, idx) => {
         const isGrid = gridViewIds.includes(t.id);
-        const trShort = t.tr ? `TR …${t.tr.slice(0, 10).slice(-4)}` : '직접 입력';
+        const trShort = t.name ? t.name : t.tr ? `TR …${t.tr.slice(0, 10).slice(-4)}` : '직접 입력'; // 💡 수동 입력은 파일명
         return (
           <div key={t.id} className="bg-gray-50 dark:bg-zinc-800/60 border border-gray-200 dark:border-zinc-700/50 rounded-2xl p-3">
             <div className="flex justify-between items-center mb-2.5">
@@ -151,8 +151,8 @@ export default function TicketListTab({ onGoToInput }: { onGoToInput: () => void
                   <div key={g.label} className="flex items-center gap-1.5">
                     <span className="w-4 text-[11px] font-black text-gray-400">{g.label}</span>
                     {g.numbers.map((n, i) => (
-                      <span key={i} className={`w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-bold shadow-sm ${getBallColor(n)}`}>
-                        {pad2(n)}
+                      <span key={i} className={`w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-bold shadow-sm ${n > 0 ? getBallColor(n) : 'bg-gray-100 dark:bg-zinc-800'}`}>
+                        {n > 0 ? pad2(n) : ''}
                       </span>
                     ))}
                   </div>

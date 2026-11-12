@@ -58,7 +58,7 @@ export type PatternFinding = {
 export const ticketToGrid = (ticket: Ticket): (number | null)[][] =>
   Array.from({ length: 5 }, (_, r) => {
     const game = ticket.games[r];
-    return Array.from({ length: 6 }, (_, c) => (game ? game.numbers[c] ?? null : null));
+    return Array.from({ length: 6 }, (_, c) => (game && game.numbers[c] ? game.numbers[c] : null)); // 💡 0(수동 입력 빈칸)도 빈 칸
   });
 
 // 💡 복권 1장 분석: 각 구역에서 끝수가 같은 번호가 minCount개 이상인 경우를 찾음

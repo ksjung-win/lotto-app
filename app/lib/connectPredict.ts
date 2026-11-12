@@ -53,7 +53,7 @@ export const methodScores = (result: ConnectResult, tickets: Ticket[], method: M
     wallRanking(result).forEach((d) => add(d.number, d.count * 100));
     result.step1.forEach((s) => s.enclosures.forEach((e) => e.walls.forEach((c) => add(c.number, 10))));
   }
-  tickets.forEach((t) => t.games.forEach((g) => g.numbers.forEach((n) => add(n, 1))));
+  tickets.forEach((t) => t.games.forEach((g) => g.numbers.forEach((n) => n > 0 && add(n, 1)))); // 0 = 빈칸
   return scores;
 };
 
@@ -131,7 +131,7 @@ export type DrawCheck = {
 export const checkDraw = (result: ConnectResult, tickets: Ticket[], draw: Draw): DrawCheck => {
   const W = draw.numbers;
   const appearOf = new Map<number, number>();
-  tickets.forEach((t) => t.games.forEach((g) => g.numbers.forEach((n) => appearOf.set(n, (appearOf.get(n) || 0) + 1))));
+  tickets.forEach((t) => t.games.forEach((g) => g.numbers.forEach((n) => n > 0 && appearOf.set(n, (appearOf.get(n) || 0) + 1)))); // 0 = 빈칸
   const per = new Map(W.map((n) => [n, { number: n, appear: appearOf.get(n) || 0, wall: 0, trap: 0 }]));
   let cellsWall = 0;
   let cellsTrap = 0;
@@ -158,7 +158,7 @@ export const checkDraw = (result: ConnectResult, tickets: Ticket[], draw: Draw):
     appear: perNumber.reduce((a, p) => a + p.appear, 0),
     wall: perNumber.reduce((a, p) => a + p.wall, 0),
     trap: perNumber.reduce((a, p) => a + p.trap, 0),
-    cellsAll: tickets.reduce((a, t) => a + t.games.reduce((b, g) => b + g.numbers.length, 0), 0),
+    cellsAll: tickets.reduce((a, t) => a + t.games.reduce((b, g) => b + g.numbers.filter((n) => n > 0).length, 0), 0), // 빈칸 제외
     cellsWall,
     cellsTrap,
     perNumber,

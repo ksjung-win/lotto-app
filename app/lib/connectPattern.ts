@@ -361,7 +361,7 @@ export const recommendCombos = (result: ConnectResult, tickets: Ticket[], count 
   const add = (n: number, v: number) => scores.set(n, (scores.get(n) || 0) + v);
   result.step4.forEach((d) => add(d.number, d.count * 100));
   result.step1.forEach((s) => s.enclosures.forEach((e) => e.cells.forEach((c) => add(c.number, 10))));
-  tickets.forEach((t) => t.games.forEach((g) => g.numbers.forEach((n) => add(n, 1))));
+  tickets.forEach((t) => t.games.forEach((g) => g.numbers.forEach((n) => n > 0 && add(n, 1)))); // 0 = 빈칸
   if (result.step4.length === 0) return { combos: [], scores };
 
   const pool = Array.from(scores.entries())

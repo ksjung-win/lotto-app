@@ -36,7 +36,8 @@ export default function InputPage() {
     }
   }, [jumpToBoard, setJumpToBoard]);
 
-  const numbers1to45 = Array.from({ length: 45 }, (_, i) => i + 1);
+  // 💡 1~45 다음에 0 (기존 1~45 위치는 그대로, 0은 45 옆 칸)
+  const numbers1to45 = [...Array.from({ length: 45 }, (_, i) => i + 1), 0];
   
   const colors = PALETTE; // 💡 빨주노초파남보 (app/lib/cellColor.ts)
 
@@ -139,7 +140,7 @@ export default function InputPage() {
     }
   };
 
-    // 💡 [저장] 버튼: 빈 표인지 확인하고 저장 팝업 열기
+  // 💡 [저장] 버튼: 빈 표인지 확인하고 저장 팝업 열기
   const handleOpenSaveModal = () => {
     const board = boards[activeBoardIdx] || [];
     const hasNumber = board.some((c) => c && c.number !== null);
@@ -314,7 +315,7 @@ export default function InputPage() {
                 <button
                   key={c.id}
                   onClick={() => setSelectedBrush(c.value)}
-                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 transition-all ${cellBg(c.value)}
+                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 transition-all ${cellBg(c.value)} ${
                     selectedBrush === c.value 
                       ? 'border-amber-500 shadow-md scale-110' 
                       : 'border-transparent'
@@ -337,7 +338,7 @@ export default function InputPage() {
                     onClick={() => handleCellClick(cellIdx)}
                     className={`
                       aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold text-xl cursor-pointer transition-colors duration-200
-                      ${cell.color ? cellBg(cell.color) : 'bg-white dark:bg-zinc-900'}
+                      ${cell.color ? cellBg(cell.color) : 'bg-white dark:bg-zinc-900'} 
                       ${textColorClass}
                       ${isFocused ? 'ring-inset ring-[3px] ring-amber-500 z-10' : ''}
                     `}
@@ -451,7 +452,7 @@ export default function InputPage() {
           </div>
         )}
 
-        from '../store/useRoundStore';{/* 💡 회차별 분석 저장 팝업 */}
+        {/* 💡 회차별 분석 저장 팝업 */}
         {isSaveModalOpen && (
           <div className="absolute inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-[300px] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
@@ -530,7 +531,6 @@ export default function InputPage() {
                       {num}
                     </div>
                   ))}
-                  <div className="aspect-square border-r border-b border-gray-300 dark:border-zinc-500 bg-gray-100 dark:bg-zinc-800/50"></div>
                   <div className="aspect-square border-r border-b border-gray-300 dark:border-zinc-500 bg-gray-100 dark:bg-zinc-800/50"></div>
                   <div className="aspect-square border-r border-b border-gray-300 dark:border-zinc-500 bg-gray-100 dark:bg-zinc-800/50"></div>
                 </div>

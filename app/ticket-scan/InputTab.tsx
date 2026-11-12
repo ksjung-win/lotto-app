@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import { Camera, Images, PenLine, X, CheckCircle2, AlertTriangle, XCircle, Loader2, Sparkles, RotateCw, Trash2 } from 'lucide-react';
-import { useTicketStore, LottoGame } from '../store/useTicketStore';
+import { useTicketStore, LottoGame, Ticket } from '../store/useTicketStore';
 import { readTicketFromFile } from '../lib/lottoQr';
 import { readTicketWithGemini, getGeminiKey, AiTicket } from '../lib/geminiReader';
 import { getLatestDrawNo } from '../store/useRoundStore';
@@ -10,6 +10,20 @@ import { getBallColor, pad2 } from '../lib/endDigitPattern';
 
 const MAX_FILES = 50;
 const GAME_LABELS = ['A', 'B', 'C', 'D', 'E'];
+
+// 💡 수동 입력: 5줄 × 6칸 (0 = 빈칸)
+const emptyCells = () => Array.from({ length: 5 }, () => Array(6).fill(0) as number[]);
+// 💡 기본 파일명: 회차-수동 01, 02 … / TR을 못 읽은 사진은 회차-자동 01, 02 … (같은 회차의 가장 큰 번호 + 1)
+const nextManualName = (round: number, kind: '수동' | '자동' = '수동') => {
+  const re = new RegExp(`^${round}-${kind} (\\d+)$`);
+  const max = useTicketStore
+    .getState()
+    .tickets.reduce((m, t) => {
+      const hit = t.name ? re.exec(t.name) : null;
+      return hit ? Math.max(m, Number(hit[1])) : m;
+    }, 0);
+  return `${round}-${kind} ${pad2(max + 1)}`;
+};
 
 // 💡 이미 등록된 복권인지 확인 (같은 회차 + TR번호 앞 10자리, TR이 없으면 번호가 모두 같으면 중복)
 const trKey = (tr: string | null | undefined) => (tr ? tr.replace(/\D/g, '').slice(0, 10) : '');
@@ -59,6 +73,14 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
   const [manualSource, setManualSource] = useState<'manual' | 'ai'>('manual');
   const [manualWarnings, setManualWarnings] = useState<string[]>([]);
   const [previewBig, setPreviewBig] = useState(false); // 사진 크게 보기
+  // 💡 수동 입력 (칸을 먼저 고르고 번호 넣기 · 빈칸 허용)
+  const [cells, setCells] = useState<number[][]>(emptyCells);
+  const [slot, setSlot] = useState<{ g: number; i: number } | null>(null); // 지금 고른 칸
+  const [manualName, setManualName] = useState('');
+  const [nameEdited, setNameEdited] = useState(false); // 파일명을 직접 고쳤는지
+  const [manualHint, setManualHint] = useState('');
+  const [nameDup, setNameDup] = useState<Ticket | null>(null); // 같은 이름의 복권
+  const isSlotMode = manualSource === 'manual';
 
   // 💡 사진 1장 판독: QR 먼저 → 없으면 제미나이 AI → 그래도 안 되면 실패
   const readOne = async (file: File, key: string, label: string, previewUrl?: string): Promise<ResultItem> => {
@@ -217,7 +239,14 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
   const openManual = (previewUrl?: string, failKey?: string, ai?: AiTicket) => {
     setManualPreview(previewUrl);
     setManualFailKey(failKey ?? null);
-    setManualRound(String(ai?.round ?? getLatestDrawNo() + 1)); // AI가 읽은 회차, 없으면 이번 주 회차
+    const startRound = ai?.round ?? getLatestDrawNo() + 1; // AI가 읽은 회차, 없으면 이번 주 회차
+    setManualRound(String(startRound));
+    setCells(emptyCells());
+    setSlot(null);
+    setManualName(nextManualName(startRound));
+    setNameEdited(false);
+    setManualHint('');
+    setNameDup(null);
     const rows = [0, 1, 2, 3, 4].map((i) => [...(ai?.rows[i] || [])]);
     setManualGames(rows);
     const firstIncomplete = rows.findIndex((r) => r.length > 0 && r.length < 6);
@@ -244,8 +273,92 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     if (next[activeGame].length === 6 && activeGame < 4) setActiveGame(activeGame + 1);
   };
 
+  // 💡 수동 입력: 회차를 바꾸면 (파일명을 직접 고치지 않았을 때) 기본 파일명도 바꿈
+  const changeManualRound = (v: string) => {
+    setManualRound(v);
+    const r = parseInt(v, 10);
+    if (!nameEdited && !isNaN(r) && r > 0) setManualName(nextManualName(r));
+    setNameDup(null);
+  };
+
+  // 💡 수동 입력: 번호를 누르면 고른 칸에 넣고 선택을 풀어 '입력 대기'
+  const putNumber = (num: number) => {
+    if (!slot) {
+      setManualHint('먼저 번호를 넣을 칸(동그라미)을 눌러 주세요.');
+      setTimeout(() => setManualHint(''), 2000);
+      return;
+    }
+    setCells((prev) => prev.map((row, g) => (g === slot.g ? row.map((n, i) => (i === slot.i ? num : n)) : row)));
+    setSlot(null);
+  };
+  const clearSlot = () => {
+    if (!slot) return;
+    setCells((prev) => prev.map((row, g) => (g === slot.g ? row.map((n, i) => (i === slot.i ? 0 : n)) : row)));
+    setSlot(null);
+  };
+
+  // 💡 수동 입력 저장
+  const saveSlotTicket = () => {
+    const round = parseInt(manualRound, 10);
+    if (isNaN(round) || round < 1) {
+      alert('추첨 회차를 입력해 주세요. (예: 1250)');
+      return;
+    }
+    const name = manualName.trim();
+    if (!name) {
+      alert('파일명을 입력해 주세요. (예: 1250-수동 01)');
+      return;
+    }
+    const count = cells.flat().filter((n) => n > 0).length;
+    if (count === 0) {
+      alert('번호를 1개 이상 입력해 주세요.');
+      return;
+    }
+    // 같은 줄에서는 실제 복권처럼 왼쪽이 작고 오른쪽이 커야 함 (같은 번호 2번도 확인)
+    for (let g = 0; g < 5; g++) {
+      const nums = cells[g].filter((n) => n > 0);
+      for (let k = 1; k < nums.length; k++) {
+        if (nums[k] === nums[k - 1]) {
+          alert(`${GAME_LABELS[g]}게임에 ${nums[k]}번이 2번 들어갔어요. 확인해 주세요.`);
+          return;
+        }
+        if (nums[k] < nums[k - 1]) {
+          alert(`${GAME_LABELS[g]}게임: ${nums[k - 1]}번이 ${nums[k]}번보다 왼쪽에 있어요.\n실제 복권처럼 왼쪽이 작고 오른쪽이 커야 해요. 자리를 확인해 주세요.`);
+          return;
+        }
+      }
+    }
+    // 같은 이름이 있으면 저장을 막고 그 복권을 보여 줌
+    const same = useTicketStore.getState().tickets.find((t) => t.name === name);
+    if (same) {
+      setNameDup(same);
+      return;
+    }
+    const last = cells.reduce((m, row, g) => (row.some((n) => n > 0) ? g : m), 0);
+    const games: LottoGame[] = cells.slice(0, last + 1).map((row, g) => ({ label: GAME_LABELS[g], numbers: [...row] }));
+    const res = addTicket({ round, tr: null, games, source: 'manual', name });
+    if (res === 'locked') {
+      alert(`${round}회는 추첨이 끝나 기록이 확정된 회차라 등록할 수 없어요.`);
+      return;
+    }
+    if (res === 'duplicate') {
+      alert('같은 자리에 같은 번호로 입력한 복권이 이미 있어요.');
+      return;
+    }
+    const newItem: ResultItem = {
+      key: manualFailKey || `manual_${Date.now()}`,
+      status: 'ok',
+      title: `${round}회 · ${name}`,
+      detail: `수동 입력 · 번호 ${count}개 등록 완료`,
+    };
+    setResults((prev) => (manualFailKey ? prev.map((r) => (r.key === manualFailKey ? newItem : r)) : [...prev, newItem]));
+    setIsManualOpen(false);
+    openNextReview(results, manualFailKey);
+  };
+
   // 💡 직접 입력 저장
   const saveManual = () => {
+    if (isSlotMode) return saveSlotTicket(); // 수동 입력 (칸 선택 방식)
     const round = parseInt(manualRound, 10);
     if (isNaN(round) || round < 1) {
       alert('추첨 회차를 입력해 주세요. (예: 1248)');
@@ -263,7 +376,8 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     }
     const games: LottoGame[] = filled.map((numbers, i) => ({ label: GAME_LABELS[i], numbers }));
     const tr = manualTr.replace(/\D/g, '') || null;
-    const res = addTicket({ round, tr, games, source: manualSource });
+    const autoName = tr ? undefined : nextManualName(round, '자동'); // 💡 TR을 못 읽으면 회차-자동 01, 02 …
+    const res = addTicket({ round, tr, games, source: manualSource, ...(autoName ? { name: autoName } : {}) });
     if (res === 'duplicate' || res === 'locked') {
       const name = `${round}회${tr ? ` TR …${tr.slice(0, 10).slice(-4)}` : ''}`;
       // 💡 locked = 추첨이 끝나 기록이 확정된 회차
@@ -291,7 +405,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     const newItem: ResultItem = {
       key: manualFailKey || `manual_${Date.now()}`,
       status: 'ok',
-      title: `${round}회 · ${tr ? `TR …${tr.slice(0, 10).slice(-4)}` : '직접 입력'}${manualSource === 'ai' ? ' (AI)' : ''}`,
+      title: `${round}회 · ${tr ? `TR …${tr.slice(0, 10).slice(-4)}` : autoName ?? '직접 입력'}${manualSource === 'ai' ? ' (AI)' : ''}`,
       detail: `${games.length}게임 등록 완료`,
     };
     // 실패했던(또는 확인 대기) 사진을 해결했다면 그 줄을 '등록 완료'로 바꿈
@@ -345,7 +459,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
         >
           <PenLine size={20} className="text-amber-500" />
           <div className="font-bold text-[13px] text-gray-900 dark:text-zinc-100">직접 입력</div>
-          <div className="text-[10.5px] text-gray-500 dark:text-zinc-400">QR이 안 읽힐 때</div>
+          <div className="text-[10.5px] text-gray-500 dark:text-zinc-400">연결 · 갇힌 번호만 칸에 넣기 (수동)</div>
         </button>
       </div>
 
@@ -502,7 +616,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
                   type="number"
                   inputMode="numeric"
                   value={manualRound}
-                  onChange={(e) => setManualRound(e.target.value)}
+                  onChange={(e) => (isSlotMode ? changeManualRound(e.target.value) : setManualRound(e.target.value))}
                   className="flex-1 border border-gray-300 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white rounded-lg px-3 py-2 text-center text-sm font-bold outline-none focus:border-amber-500"
                 />
               </div>
@@ -515,73 +629,177 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
                     inputMode="numeric"
                     value={manualTr}
                     onChange={(e) => setManualTr(e.target.value)}
-                    placeholder="중복 확인용 (없으면 비워 두기)"
+                    placeholder={`비우면 ${nextManualName(parseInt(manualRound, 10) || 0, '자동')}로 저장`}
                     className="flex-1 border border-gray-300 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white rounded-lg px-3 py-2 text-center text-sm font-bold outline-none focus:border-amber-500"
                   />
                 </div>
               )}
 
-              {/* A~E 게임 줄 (누르면 그 게임을 입력) */}
-              <div className="flex flex-col gap-1">
-                {manualGames.map((nums, gi) => (
-                  <button
-                    key={gi}
-                    onClick={() => setActiveGame(gi)}
-                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-colors ${
-                      activeGame === gi ? 'border-amber-500 bg-amber-50 dark:bg-amber-500/10' : 'border-gray-200 dark:border-zinc-700'
-                    }`}
-                  >
-                    <span className={`w-5 text-xs font-black ${activeGame === gi ? 'text-amber-500' : 'text-gray-400'}`}>{GAME_LABELS[gi]}</span>
-                    {Array.from({ length: 6 }).map((_, i) => {
-                      const n = nums[i];
+              {isSlotMode ? (
+                <>
+                  {/* 💡 파일명 */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-gray-700 dark:text-zinc-300 shrink-0">파일명</label>
+                    <input
+                      type="text"
+                      value={manualName}
+                      onChange={(e) => {
+                        setManualName(e.target.value);
+                        setNameEdited(true);
+                        setNameDup(null);
+                      }}
+                      className="flex-1 min-w-0 border border-gray-300 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white rounded-lg px-3 py-2 text-center text-sm font-bold outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-500 dark:text-zinc-400 break-keep leading-relaxed">
+                    동그라미(칸)를 먼저 누르고 번호를 누르세요. 연결 번호와 갇힌 번호만 실제 복권과 <b>같은 자리</b>에 넣으면 돼요. 빈칸은 비워 두세요.
+                  </p>
+
+                  {/* 💡 A~E 줄 × 6칸 */}
+                  <div className="flex flex-col gap-1">
+                    {cells.map((row, g) => (
+                      <div key={g} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-zinc-700">
+                        <span className="w-5 text-xs font-black text-gray-400">{GAME_LABELS[g]}</span>
+                        {row.map((n, i) => {
+                          const on = slot?.g === g && slot?.i === i;
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => {
+                                setSlot(on ? null : { g, i });
+                                setManualHint('');
+                              }}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold transition-all ${
+                                n > 0 ? getBallColor(n) : 'bg-gray-100 dark:bg-zinc-800 text-gray-300'
+                              } ${on ? 'ring-[3px] ring-amber-500 scale-110' : ''}`}
+                            >
+                              {n > 0 ? pad2(n) : ''}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className={`text-center text-[11px] font-bold min-h-[16px] ${manualHint ? 'text-red-500' : 'text-amber-500'}`}>
+                    {manualHint || (slot ? `${GAME_LABELS[slot.g]}게임 ${slot.i + 1}번째 칸에 넣을 번호를 누르세요` : '')}
+                  </div>
+
+                  {/* 1~45 번호판 */}
+                  <div className="grid grid-cols-9 gap-1">
+                    {Array.from({ length: 45 }, (_, i) => i + 1).map((num) => {
+                      const current = slot ? cells[slot.g][slot.i] === num : false;
                       return (
-                        <span
-                          key={i}
-                          className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                            n ? getBallColor(n) : 'bg-gray-100 dark:bg-zinc-800 text-gray-300'
+                        <button
+                          key={num}
+                          onClick={() => putNumber(num)}
+                          className={`aspect-square rounded-full text-[11px] font-bold border transition-all ${
+                            current
+                              ? `${getBallColor(num)} border-transparent scale-105`
+                              : 'bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border-gray-200 dark:border-zinc-700'
                           }`}
                         >
-                          {n ? pad2(n) : ''}
-                        </span>
+                          {num}
+                        </button>
                       );
                     })}
-                  </button>
-                ))}
-              </div>
+                  </div>
 
-              {/* 1~45 번호판 */}
-              <div className="grid grid-cols-9 gap-1">
-                {Array.from({ length: 45 }, (_, i) => i + 1).map((num) => {
-                  const selected = manualGames[activeGame].includes(num);
-                  return (
+                  {/* 💡 같은 이름의 복권이 있을 때 */}
+                  {nameDup && (
+                    <div className="rounded-xl p-2.5 border border-red-500/40 bg-red-50 dark:bg-red-500/10 flex flex-col gap-1.5">
+                      <div className="text-[11.5px] font-bold text-red-600 dark:text-red-400 break-keep">
+                        ‘{nameDup.name}’ 이름의 복권이 이미 있어요 ({nameDup.round}회). 아래 번호를 확인하고 파일명을 바꿔 주세요.
+                      </div>
+                      {nameDup.games.map((gm) => (
+                        <div key={gm.label} className="flex items-center gap-1">
+                          <span className="w-4 text-[10px] font-black text-gray-400">{gm.label}</span>
+                          {gm.numbers.map((n, i) => (
+                            <span key={i} className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${n > 0 ? getBallColor(n) : 'bg-gray-100 dark:bg-zinc-800'}`}>
+                              {n > 0 ? pad2(n) : ''}
+                            </span>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                {/* A~E 게임 줄 (누르면 그 게임을 입력) */}
+                <div className="flex flex-col gap-1">
+                  {manualGames.map((nums, gi) => (
                     <button
-                      key={num}
-                      onClick={() => toggleManualNumber(num)}
-                      className={`aspect-square rounded-full text-[11px] font-bold border transition-all ${
-                        selected
-                          ? `${getBallColor(num)} border-transparent scale-105`
-                          : 'bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border-gray-200 dark:border-zinc-700'
+                      key={gi}
+                      onClick={() => setActiveGame(gi)}
+                      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-colors ${
+                        activeGame === gi ? 'border-amber-500 bg-amber-50 dark:bg-amber-500/10' : 'border-gray-200 dark:border-zinc-700'
                       }`}
                     >
-                      {num}
+                      <span className={`w-5 text-xs font-black ${activeGame === gi ? 'text-amber-500' : 'text-gray-400'}`}>{GAME_LABELS[gi]}</span>
+                      {Array.from({ length: 6 }).map((_, i) => {
+                        const n = nums[i];
+                        return (
+                          <span
+                            key={i}
+                            className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                              n ? getBallColor(n) : 'bg-gray-100 dark:bg-zinc-800 text-gray-300'
+                            }`}
+                          >
+                            {n ? pad2(n) : ''}
+                          </span>
+                        );
+                      })}
                     </button>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+
+                {/* 1~45 번호판 */}
+                <div className="grid grid-cols-9 gap-1">
+                  {Array.from({ length: 45 }, (_, i) => i + 1).map((num) => {
+                    const selected = manualGames[activeGame].includes(num);
+                    return (
+                      <button
+                        key={num}
+                        onClick={() => toggleManualNumber(num)}
+                        className={`aspect-square rounded-full text-[11px] font-bold border transition-all ${
+                          selected
+                            ? `${getBallColor(num)} border-transparent scale-105`
+                            : 'bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border-gray-200 dark:border-zinc-700'
+                        }`}
+                      >
+                        {num}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                </>
+              )}
 
               {/* 💡 버튼은 화면 아래에 항상 붙어 있게 (휴대폰에서 가려지지 않도록) */}
               <div className="flex gap-2 sticky bottom-0 -mx-3 -mb-3 px-3 py-3 bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-700">
-                <button
-                  onClick={() => setManualGames((prev) => prev.map((g, i) => (i === activeGame ? [] : g)))}
-                  className="px-3 py-3 rounded-xl bg-gray-200 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 text-xs font-bold"
-                >
-                  {GAME_LABELS[activeGame]}게임 비우기
-                </button>
+                {isSlotMode ? (
+                  <button
+                    onClick={clearSlot}
+                    disabled={!slot || cells[slot.g][slot.i] === 0}
+                    className="px-3 py-3 rounded-xl bg-gray-200 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 text-xs font-bold disabled:opacity-40"
+                  >
+                    칸 비우기
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setManualGames((prev) => prev.map((g, i) => (i === activeGame ? [] : g)))}
+                    className="px-3 py-3 rounded-xl bg-gray-200 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 text-xs font-bold"
+                  >
+                    {GAME_LABELS[activeGame]}게임 비우기
+                  </button>
+                )}
                 <button
                   onClick={saveManual}
                   className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold active:scale-95 transition-all shadow-md"
                 >
-                  {manualSource === 'ai' ? '확인 완료 · 등록' : '등록하기'}
+                  {manualSource === 'ai' ? '확인 완료 · 등록' : '저장하기'}
                 </button>
               </div>
             </div>

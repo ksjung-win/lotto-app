@@ -5,7 +5,7 @@ import { isRoundLocked } from './useSnapshotStore';
 // 💡 복권 1게임 (A~E 중 하나)
 export type LottoGame = {
   label: string;     // 'A' ~ 'E'
-  numbers: number[]; // 번호 6개 (작은 번호부터)
+  numbers: number[]; // 번호 6개 (작은 번호부터). 💡 수동 입력 복권은 빈칸을 0으로 저장
 };
 
 // 💡 복권 1장
@@ -16,6 +16,7 @@ export type Ticket = {
   games: LottoGame[];       // A~E 게임 (최대 5개)
   source: 'qr' | 'manual' | 'ai';  // QR로 읽었는지, 직접 입력했는지, AI(제미나이)로 읽었는지
   createdAt: number;        // 등록 시각
+  name?: string;            // 💡 수동 입력 복권의 파일명 (예: 1250-수동 01)
 };
 
 export type AddResult = 'added' | 'duplicate' | 'locked'; // locked = 추첨이 끝나 기록이 확정된 회차

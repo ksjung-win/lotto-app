@@ -315,8 +315,8 @@ export function TicketsByDate({ roundTickets, ticketNo, isNew }: { roundTickets:
                     <div key={g.label} className="flex items-center gap-1">
                       <span className="w-4 text-[10px] font-black text-gray-400">{g.label}</span>
                       {g.numbers.map((n, i) => (
-                        <span key={i} className={`w-6 h-6 rounded-full flex items-center justify-center text-[10.5px] font-bold ${getBallColor(n)}`}>
-                          {pad2(n)}
+                        <span key={i} className={`w-6 h-6 rounded-full flex items-center justify-center text-[10.5px] font-bold ${n > 0 ? getBallColor(n) : 'bg-gray-100 dark:bg-zinc-800'}`}>
+                          {n > 0 ? pad2(n) : ''}
                         </span>
                       ))}
                     </div>
@@ -374,16 +374,57 @@ export function Step2View({ step2Tickets, step1Count, ticketNo }: { step2Tickets
 }
 
 /* ═══════════════════════════════ 3단계: 갇힌 번호 (번호판) ═══════════════════════════════ */
+// 💡 3단계 보기 버튼: 전체 / 1장 / 2장 (숫자 = 그 번호가 갇힌 복권 수)
+const STEP3_FILTERS: { key: 'all' | number; label: string }[] = [
+  { key: 'all', label: '전체' },
+  { key: 1, label: '1장' },
+  { key: 2, label: '2장' },
+];
+
 export function Step3View({ step3, step4, ticketNo }: { step3: number[]; step4: DupNumber[]; ticketNo: Map<string, number> }) {
   const [selected, setSelected] = useState<number | null>(step4[0]?.number ?? null);
+  const [filter, setFilter] = useState<'all' | number>('all');
   if (step3.length === 0) return <Empty text="2단계에서 갇힌 번호가 없습니다" />;
   const countOf = new Map(step4.map((d) => [d.number, d.count]));
-  const sel = step4.find((d) => d.number === selected);
+  // 버튼별 번호 목록 (작은 순)
+  const listOf = (key: 'all' | number) => (key === 'all' ? step3 : step3.filter((n) => countOf.get(n) === key));
+  const shown = listOf(filter);
+  const shownSet = new Set(shown);
+  const sel = step4.find((d) => d.number === selected && shownSet.has(d.number));
+
+  // 버튼을 누르면: 그 목록에서 가장 많이 갇힌 번호(같으면 작은 번호)를 자동 선택
+  const pickFilter = (key: 'all' | number) => {
+    setFilter(key);
+    const list = new Set(listOf(key));
+    setSelected(step4.find((d) => list.has(d.number))?.number ?? null);
+  };
 
   return (
     <div className="flex flex-col gap-3">
+      {/* 보기 버튼 */}
+      <div className="flex gap-1.5">
+        {STEP3_FILTERS.map((f) => {
+          const n = listOf(f.key).length;
+          const on = filter === f.key;
+          return (
+            <button
+              key={String(f.key)}
+              disabled={n === 0}
+              onClick={() => pickFilter(f.key)}
+              className={`flex-1 px-2 py-2 rounded-xl text-[12px] font-black border transition-all disabled:opacity-40 ${
+                on
+                  ? 'bg-orange-500 border-orange-500 text-white'
+                  : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200'
+              }`}
+            >
+              {f.label} {n}개
+            </button>
+          );
+        })}
+      </div>
+
       <SummaryBox>
-        갇힌 번호 <span className="text-orange-500">{step3.length}개</span>: {step3.map(pad2).join(' · ')}
+        갇힌 번호{filter === 'all' ? '' : `(${filter}장)`} <span className="text-orange-500">{shown.length}개</span>: {shown.map(pad2).join(' · ')}
       </SummaryBox>
       <p className="text-[11px] text-gray-500 dark:text-zinc-400 break-keep">
         주황 번호를 누르면 그 번호가 갇혀 있던 복권이 아래에 나와요. 작은 숫자는 갇힌 복권 수예요.
@@ -393,8 +434,8 @@ export function Step3View({ step3, step4, ticketNo }: { step3: number[]; step4: 
       <div className="grid grid-cols-9 gap-1">
         {Array.from({ length: 45 }, (_, i) => i + 1).map((n) => {
           const c = countOf.get(n);
-          const on = c !== undefined;
-          const isSel = selected === n;
+          const on = c !== undefined && shownSet.has(n);
+          const isSel = selected === n && on;
           return (
             <button
               key={n}
