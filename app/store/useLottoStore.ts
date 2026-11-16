@@ -17,10 +17,14 @@ interface LottoStore {
   setBoard: (boardIdx: number, cells: CellData[]) => void;
 }
 
-// 1. 표의 개수를 50개에서 200개로 대폭 확장
-const initialBoards = Array.from({ length: 200 }, () =>
-  Array.from({ length: 30 }, () => ({ number: null, color: null }))
-);
+// 💡 0번 표: 60칸(10줄 × 6칸). 기존 1~200번 표(0~199칸 위치)는 그대로 두고 맨 뒤(200번 자리)에 따로 저장
+export const BOARD0_IDX = 200;
+export const cellCountOf = (boardIdx: number) => (boardIdx === BOARD0_IDX ? 60 : 30);
+const emptyBoard = (n: number) => Array.from({ length: n }, () => ({ number: null, color: null }));
+export const boardNoOf = (boardIdx: number) => (boardIdx === BOARD0_IDX ? 0 : boardIdx + 1); // 화면에 보이는 표 번호
+
+// 1. 표의 개수를 50개에서 200개로 대폭 확장 (+ 0번 표)
+const initialBoards = [...Array.from({ length: 200 }, () => emptyBoard(30)), emptyBoard(60)];
 
 export const useLottoStore = create<LottoStore>()(
   persist(
@@ -58,7 +62,7 @@ export const useLottoStore = create<LottoStore>()(
       
       resetBoard: (boardIdx) => set((state) => {
         const newBoards = [...state.boards];
-        newBoards[boardIdx] = Array.from({ length: 30 }, () => ({ number: null, color: null }));
+        newBoards[boardIdx] = emptyBoard(cellCountOf(boardIdx));
         return { boards: newBoards, focusedCell: null };
       }),
 
@@ -77,6 +81,8 @@ export const useLottoStore = create<LottoStore>()(
           const mergedBoards = [...currentState.boards];
           persistedState.boards.forEach((board: any, index: number) => {
             if (index < 200) mergedBoards[index] = board;
+            // 💡 0번 표(60칸)는 칸 수가 맞을 때만 이어받음
+            if (index === BOARD0_IDX && Array.isArray(board) && board.length === 60) mergedBoards[index] = board;
           });
           return { ...currentState, ...persistedState, boards: mergedBoards };
         }

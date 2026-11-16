@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Home, Search, Settings, ChevronLeft, ChevronRight, X, Eraser, MousePointer2, Layers, Save } from 'lucide-react';
-import { useLottoStore } from '../store/useLottoStore';
+import { useLottoStore, BOARD0_IDX, boardNoOf, cellCountOf } from '../store/useLottoStore';
 import { useRoundStore, getTodayString, getNextSeq, makeRoundName, getLatestDrawNo } from '../store/useRoundStore';
 import { PALETTE, cellBg, cellText } from '../lib/cellColor';
 
@@ -112,30 +112,31 @@ export default function InputPage() {
   };
 
   const handleReset = () => {
-    if (window.confirm(`${activeBoardIdx + 1}번 표의 입력 내용을 지우시겠습니까?`)) {
+    if (window.confirm(`${boardNoOf(activeBoardIdx)}번 표의 입력 내용을 지우시겠습니까?`)) {
       resetBoard(activeBoardIdx);
       setIsMatchModalOpen(false);
     }
   };
 
+  // 💡 1번 표에서 ◀ → 0번 표, 0번 표에서 ▶ → 1번 표
   const handlePrevBoard = () => {
-    setActiveBoardIdx(prev => Math.max(0, prev - 1));
+    setActiveBoardIdx(prev => (prev === BOARD0_IDX ? prev : prev === 0 ? BOARD0_IDX : prev - 1));
     setIsMatchModalOpen(false);
   };
   const handleNextBoard = () => {
-    setActiveBoardIdx(prev => Math.min(199, prev + 1));
+    setActiveBoardIdx(prev => (prev === BOARD0_IDX ? 0 : Math.min(199, prev + 1)));
     setIsMatchModalOpen(false);
   };
 
   const handleSearch = () => {
     const targetNum = parseInt(searchQuery, 10);
-    if (!isNaN(targetNum) && targetNum >= 1 && targetNum <= 200) {
-      setActiveBoardIdx(targetNum - 1);
+    if (!isNaN(targetNum) && targetNum >= 0 && targetNum <= 200) {
+      setActiveBoardIdx(targetNum === 0 ? BOARD0_IDX : targetNum - 1);
       setIsSearchModalOpen(false);
       setSearchQuery('');
       setIsMatchModalOpen(false);
     } else {
-      alert('1에서 200 사이의 숫자를 입력해 주세요.');
+      alert('0에서 200 사이의 숫자를 입력해 주세요.');
       setSearchQuery('');
     }
   };
@@ -172,7 +173,8 @@ export default function InputPage() {
     ? makeRoundName(previewRound, getTodayString(), getNextSeq(savedRounds, previewRound))
     : '회차를 입력하세요';
 
-  const activeBoard = boards[activeBoardIdx] || Array.from({ length: 30 }, () => ({ number: null, color: null }));
+  const isBoard0 = activeBoardIdx === BOARD0_IDX;
+  const activeBoard = boards[activeBoardIdx] || Array.from({ length: cellCountOf(activeBoardIdx) }, () => ({ number: null, color: null }));
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-black flex items-center justify-center sm:p-4 transition-colors duration-300">
@@ -325,9 +327,12 @@ export default function InputPage() {
             </div>
           </div>
 
-          {/* 메인 6x5 표 (mb-6 -> mb-2로 하단 여백 대폭 축소) */}
+          {/* 메인 6x5 표 (0번 표는 6x10, 한 화면에 다 보이게 폭을 줄임) */}
           <div className="w-full px-4 mb-2 shrink-0">
-            <div className="grid grid-cols-6 border-l border-t border-gray-300 dark:border-zinc-500 bg-white dark:bg-zinc-900 shadow-sm w-full transition-colors duration-300">
+            <div
+              className="grid grid-cols-6 border-l border-t border-gray-300 dark:border-zinc-500 bg-white dark:bg-zinc-900 shadow-sm w-full mx-auto transition-colors duration-300"
+              style={isBoard0 ? { maxWidth: 'max(180px, calc((100dvh - 330px) * 0.6))' } : undefined}
+            >
               {activeBoard.map((cell, cellIdx) => {
                 const isFocused = focusedCell?.boardIdx === activeBoardIdx && focusedCell?.cellIdx === cellIdx;
                 const textColorClass = cellText(cell.color) ?? 'text-gray-900 dark:text-white';
@@ -337,7 +342,9 @@ export default function InputPage() {
                     key={cellIdx}
                     onClick={() => handleCellClick(cellIdx)}
                     className={`
-                      aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold text-xl cursor-pointer transition-colors duration-200
+                      aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold cursor-pointer transition-colors duration-200
+                      ${isBoard0 ? 'text-base' : 'text-xl'}
+                      ${isBoard0 && cellIdx >= 30 && cellIdx < 36 ? 'border-t-2 border-t-amber-500/70' : ''}
                       ${cell.color ? cellBg(cell.color) : 'bg-white dark:bg-zinc-900'} 
                       ${textColorClass}
                       ${isFocused ? 'ring-inset ring-[3px] ring-amber-500 z-10' : ''}
@@ -356,13 +363,13 @@ export default function InputPage() {
           <div className="flex items-center justify-center w-full max-w-[200px] bg-white dark:bg-zinc-800 rounded-full shadow-sm border border-gray-200 dark:border-zinc-700 p-1 transition-colors duration-300">
             <button 
               onClick={handlePrevBoard}
-              disabled={activeBoardIdx === 0}
+              disabled={activeBoardIdx === BOARD0_IDX}
               className="p-2 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-700 active:bg-gray-200 dark:active:bg-zinc-600 disabled:opacity-30 transition-colors"
             >
               <ChevronLeft size={20} />
             </button>
             <span className="font-black text-amber-500 text-base flex-1 text-center">
-              {activeBoardIdx + 1} <span className="text-gray-400 dark:text-zinc-500 text-sm font-medium">/ 200</span>
+              {boardNoOf(activeBoardIdx)} <span className="text-gray-400 dark:text-zinc-500 text-sm font-medium">/ 200</span>
             </span>
             <button 
               onClick={handleNextBoard}
@@ -434,7 +441,7 @@ export default function InputPage() {
               <div className="p-5 flex flex-col gap-4 bg-gray-100 dark:bg-zinc-950">
                 <input
                   type="number"
-                  placeholder="번호 입력 (1~200)"
+                  placeholder="번호 입력 (0~200)"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -467,7 +474,7 @@ export default function InputPage() {
               </div>
               <div className="p-5 flex flex-col gap-3 bg-gray-100 dark:bg-zinc-950">
                 <p className="text-xs text-gray-500 dark:text-zinc-400">
-                  <strong className="text-amber-500">{activeBoardIdx + 1}번 표</strong>를 저장합니다.
+                  <strong className="text-amber-500">{boardNoOf(activeBoardIdx)}번 표</strong>를 저장합니다.
                 </p>
                 <label className="text-xs font-bold text-gray-700 dark:text-zinc-300">추첨 회차</label>
                 <input

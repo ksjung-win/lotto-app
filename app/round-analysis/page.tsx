@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Home, Search, ChevronLeft, ChevronRight, X, Trash2, Download, Square, LayoutGrid, ClipboardList } from 'lucide-react';
-import { useLottoStore, CellData } from '../store/useLottoStore';
+import { useLottoStore, CellData, BOARD0_IDX, boardNoOf } from '../store/useLottoStore';
 import { useRoundStore, SavedRound } from '../store/useRoundStore';
 import { cellBg, cellText } from '../lib/cellColor';
 
@@ -107,23 +107,26 @@ export default function RoundAnalysisPage() {
   // 💡 불러오기 팝업 열기 (기본값: 원본 표 번호)
   const handleOpenLoad = () => {
     if (!currentItem) return;
-    setLoadTargetInput(String(currentItem.sourceBoardIdx + 1));
+    setLoadTargetInput(String(boardNoOf(currentItem.sourceBoardIdx)));
     setIsLoadModalOpen(true);
   };
 
+  // 💡 60칸 저장본은 0번 표에만, 30칸 저장본은 1~200번 표에만 넣을 수 있음
+  const is60 = (currentItem?.cells.length ?? 30) > 30;
   const loadTargetNum = parseInt(loadTargetInput, 10);
-  const isLoadTargetValid = !isNaN(loadTargetNum) && loadTargetNum >= 1 && loadTargetNum <= 200;
+  const loadIdxOf = (n: number) => (n === 0 ? BOARD0_IDX : n - 1);
+  const isLoadTargetValid = !isNaN(loadTargetNum) && (is60 ? loadTargetNum === 0 : loadTargetNum >= 1 && loadTargetNum <= 200);
   const isLoadTargetFilled =
-    isLoadTargetValid && (boards[loadTargetNum - 1] || []).some((c) => c && (c.number !== null || c.color !== null));
+    isLoadTargetValid && (boards[loadIdxOf(loadTargetNum)] || []).some((c) => c && (c.number !== null || c.color !== null));
 
   // 💡 불러오기 실행: 스튜디오의 해당 표에 덮어쓰고 스튜디오로 이동
   const handleConfirmLoad = () => {
     if (!currentItem) return;
     if (!isLoadTargetValid) {
-      alert('1에서 200 사이의 표 번호를 입력해 주세요.');
+      alert(is60 ? '60칸 표는 0번 표에만 불러올 수 있어요. 0을 입력해 주세요.' : '1에서 200 사이의 표 번호를 입력해 주세요.');
       return;
     }
-    const targetIdx = loadTargetNum - 1;
+    const targetIdx = loadIdxOf(loadTargetNum);
     setBoard(targetIdx, currentItem.cells);
     setJumpToBoard(targetIdx);
     setIsLoadModalOpen(false);
@@ -131,36 +134,40 @@ export default function RoundAnalysisPage() {
   };
 
   // 표 그리기 (크게 / 작게 공용)
-  const renderBoard = (cells: CellData[], size: 'large' | 'small') => (
+  // 💡 60칸(0번 표) 저장본은 10줄로 그림 (크게 볼 때는 폭을 줄여 정사각형 칸 유지)
+  const renderBoard = (cells: CellData[], size: 'large' | 'small') => {
+    const big = cells.length > 30;
+    return (
     <div
       className={`grid grid-cols-6 w-full ${
         size === 'large'
-          ? 'border-l border-t border-gray-300 dark:border-zinc-500 bg-white dark:bg-zinc-900 shadow-sm'
-          : 'gap-1'
+          ? `border-l border-t border-gray-300 dark:border-zinc-500 bg-white dark:bg-zinc-900 shadow-sm ${big ? 'max-w-[240px] mx-auto' : ''}`
+          : big ? 'gap-[2px]' : 'gap-1'
       }`}
     >
-      {Array.from({ length: 30 }).map((_, i) => {
+      {Array.from({ length: big ? 60 : 30 }).map((_, i) => {
         const cell = cells[i] || { number: null, color: null };
         const textColor = cellText(cell.color) ?? 'text-gray-900 dark:text-white';
         const text = cell.number !== null && cell.number !== undefined ? String(cell.number) : '';
         return size === 'large' ? (
           <div
             key={i}
-            className={`aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold text-xl ${cellBg(cell.color) || 'bg-white dark:bg-zinc-900'} ${textColor}`}
+            className={`aspect-square border-r border-b border-gray-300 dark:border-zinc-500 flex items-center justify-center font-bold ${big ? 'text-sm' : 'text-xl'} ${big && i >= 30 && i < 36 ? 'border-t-2 border-t-amber-500/70' : ''} ${cellBg(cell.color) || 'bg-white dark:bg-zinc-900'} ${textColor}`}
           >
             {text}
           </div>
         ) : (
           <div
             key={i}
-            className={`w-full h-full min-h-[16px] rounded-[3px] flex items-center justify-center text-[10px] font-bold ${cellBg(cell.color) || 'bg-gray-200 dark:bg-zinc-700/30'} ${textColor}`}
+            className={`w-full h-full ${big ? 'min-h-[7px] text-[7px] rounded-[2px]' : 'min-h-[16px] text-[10px] rounded-[3px]'} flex items-center justify-center font-bold ${cellBg(cell.color) || 'bg-gray-200 dark:bg-zinc-700/30'} ${textColor}`}
           >
             {text}
           </div>
         );
       })}
     </div>
-  );
+    );
+  };
 
   if (!isMounted) return null;
 
@@ -270,7 +277,7 @@ export default function RoundAnalysisPage() {
                       <div className="bg-gray-50 dark:bg-zinc-800/80 border border-gray-200 dark:border-zinc-700/50 rounded-xl px-3 py-2.5">
                         <div className="font-black text-gray-900 dark:text-white text-[15px]">{currentItem.name}</div>
                         <div className="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
-                          원본: {currentItem.sourceBoardIdx + 1}번 표 · 저장: {formatSavedAt(currentItem.savedAt)}
+                          원본: {boardNoOf(currentItem.sourceBoardIdx)}번 표 · 저장: {formatSavedAt(currentItem.savedAt)}
                         </div>
                       </div>
 
@@ -388,7 +395,7 @@ export default function RoundAnalysisPage() {
                 <p className="text-xs text-gray-500 dark:text-zinc-400 break-keep">
                   <strong className="text-gray-800 dark:text-zinc-100">{currentItem.name}</strong> 표를 번호 입력 스튜디오의 아래 표 번호에 넣습니다.
                 </p>
-                <label className="text-xs font-bold text-gray-700 dark:text-zinc-300">넣을 표 번호 (1~200)</label>
+                <label className="text-xs font-bold text-gray-700 dark:text-zinc-300">넣을 표 번호 {is60 ? '(60칸 표는 0번 표에만)' : '(1~200)'}</label>
                 <input
                   type="number"
                   inputMode="numeric"
