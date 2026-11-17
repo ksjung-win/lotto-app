@@ -3,23 +3,28 @@
 import React, { useEffect, useState } from 'react';
 import { X, KeyRound, CheckCircle2, XCircle, Loader2, Eye, EyeOff } from 'lucide-react';
 import {
-  getGeminiKey, setGeminiKey, clearGeminiKey, getGeminiModel, setGeminiModel, testGemini, DEFAULT_GEMINI_MODEL,
+  getGeminiKey, setGeminiKey, clearGeminiKey, getGeminiModel, setGeminiModel, testGemini, DEFAULT_GEMINI_MODEL, GEMINI_MODELS, shortModel,
 } from '../lib/geminiReader';
 import SyncSection from './SyncSection';
 
-// 💡 설정 창: 제미나이 API 키 (각자 자기 키를 입력, 이 휴대폰에만 저장)
+// 💡 설정 창: 기기 연동(PC ↔ 휴대폰) + 제미나이 API 키 (각자 자기 키를 입력, 이 휴대폰에만 저장)
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [keyInput, setKeyInput] = useState('');
   const [modelInput, setModelInput] = useState(DEFAULT_GEMINI_MODEL);
   const [showKey, setShowKey] = useState(false);
   const [hasSavedKey, setHasSavedKey] = useState(false);
   const [testState, setTestState] = useState<{ status: 'idle' | 'testing' | 'ok' | 'fail'; message: string }>({ status: 'idle', message: '' });
+  // 💡 모델 선택: 목록에 있는 모델 또는 '직접 입력'
+  const isListed = GEMINI_MODELS.some((m) => m.id === modelInput);
+  const [customModel, setCustomModel] = useState(false);
 
   useEffect(() => {
     const k = getGeminiKey();
     setKeyInput(k);
     setHasSavedKey(!!k);
-    setModelInput(getGeminiModel());
+    const m = getGeminiModel();
+    setModelInput(m);
+    setCustomModel(!GEMINI_MODELS.some((x) => x.id === m));
   }, []);
 
   const handleSave = () => {
@@ -41,8 +46,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     }
     setTestState({ status: 'testing', message: '' });
     try {
-      await testGemini(keyInput.trim(), modelInput.trim() || DEFAULT_GEMINI_MODEL);
-      setTestState({ status: 'ok', message: '연결 성공! 이제 QR 없는 사진도 읽을 수 있어요.' });
+      const r = await testGemini(keyInput.trim(), modelInput.trim() || DEFAULT_GEMINI_MODEL, (p) =>
+        setTestState({
+          status: 'testing',
+          message: p.waiting ? `${shortModel(p.model)} 서버가 바빠요 · ${p.waiting}초 뒤 다시 시도` : `${shortModel(p.model)} 확인 중${p.attempt > 1 ? ` (${p.attempt}번째)` : ''}`,
+        })
+      );
+      // 예: "3.8-flash 바쁨 → 3.6-flash 연결 성공"
+      const why = (t: string) => (t.includes('503') ? '바쁨' : t.includes('시간 초과') ? '응답 없음' : '실패');
+      const before = r.trail.map((t) => `${t.split(':')[0]} ${why(t)} → `).join('');
+      setTestState({ status: 'ok', message: `${before}${shortModel(r.model)} 연결 성공! 이제 QR 없는 사진도 읽을 수 있어요.` });
     } catch (e) {
       setTestState({ status: 'fail', message: e instanceof Error ? e.message : '연결에 실패했습니다.' });
     }
@@ -97,16 +110,38 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
 
-          <label className="text-xs font-bold text-gray-700 dark:text-zinc-300">모델 이름</label>
-          <input
-            type="text"
-            value={modelInput}
-            onChange={(e) => setModelInput(e.target.value)}
-            autoComplete="off"
+          <label className="text-xs font-bold text-gray-700 dark:text-zinc-300">먼저 시도할 모델</label>
+          <select
+            value={customModel || !isListed ? '__custom' : modelInput}
+            onChange={(e) => {
+              if (e.target.value === '__custom') {
+                setCustomModel(true);
+              } else {
+                setCustomModel(false);
+                setModelInput(e.target.value);
+              }
+            }}
             className="w-full border border-gray-300 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white rounded-lg px-3 py-2.5 text-sm outline-none focus:border-amber-500"
-          />
+          >
+            {GEMINI_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+            <option value="__custom">직접 입력…</option>
+          </select>
+          {(customModel || !isListed) && (
+            <input
+              type="text"
+              value={modelInput}
+              onChange={(e) => setModelInput(e.target.value)}
+              placeholder="예: gemini-3.8-flash"
+              autoComplete="off"
+              className="w-full border border-gray-300 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white rounded-lg px-3 py-2.5 text-sm outline-none focus:border-amber-500"
+            />
+          )}
           <p className="text-[10.5px] text-gray-400 -mt-1.5 break-keep">
-            보통은 그대로 두세요. 구글이 모델을 바꾸면 여기서 새 이름(예: 더 새로운 flash 모델)으로 고칠 수 있어요.
+            고른 모델이 바쁘거나(503) 응답이 없으면 나머지 모델로 자동으로 바꿔서 다시 읽어요. 한 번 시도에 45초가 넘으면 다음으로 넘어가요.
           </p>
 
           <div className="grid grid-cols-3 gap-1.5">
@@ -122,6 +157,11 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
 
+          {testState.status === 'testing' && testState.message && (
+            <div className="flex items-start gap-1.5 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-[11.5px] font-bold text-amber-700 dark:text-amber-400 break-keep">
+              <Loader2 size={14} className="shrink-0 mt-0.5 animate-spin" /> {testState.message}
+            </div>
+          )}
           {testState.status === 'ok' && (
             <div className="flex items-start gap-1.5 p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-[11.5px] font-bold text-emerald-700 dark:text-emerald-400">
               <CheckCircle2 size={14} className="shrink-0 mt-0.5" /> {testState.message}

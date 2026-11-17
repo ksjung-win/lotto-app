@@ -43,6 +43,17 @@ export const setGeminiModel = (model: string) => {
 };
 
 // ───── 제미나이 호출 ─────
+// 💡 쓸 수 있는 모델 (위에서부터 차례로 시도: 설정에서 고른 모델 → 나머지 예비 모델)
+export const GEMINI_MODELS: { id: string; label: string }[] = [
+  { id: 'gemini-3.8-flash', label: '3.8 Flash (최신)' },
+  { id: 'gemini-3.6-flash', label: '3.6 Flash (안정)' },
+  { id: 'gemini-3.5-flash-lite', label: '3.5 Flash-Lite (가볍고 빠름)' },
+];
+export const shortModel = (m: string) => m.replace(/^gemini-/, '');
+
+const TIMEOUT_MS = 45000; // 한 번 시도에 45초가 넘으면 멈추고 다음으로
+const RETRY_WAITS = [2000, 5000]; // 서버가 바쁠 때 쉬었다가 다시 시도 (같은 모델로 최대 2번 더)
+
 const endpoint = (model: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 
@@ -51,32 +62,90 @@ const explainError = (status: number, message: string) => {
   if (status === 400 && /API key/i.test(message)) return 'API 키가 올바르지 않습니다. 키를 다시 확인해 주세요.';
   if (status === 400) return `요청 오류: ${message}`;
   if (status === 403) return 'API 키 권한이 없거나, 키의 사용 제한(웹사이트 제한) 설정에 이 사이트가 빠져 있습니다.';
-  if (status === 404) return '모델 이름을 찾을 수 없습니다. 설정에서 모델 이름을 확인해 주세요.';
-  if (status === 429) return '사용량 한도를 넘었습니다. 잠시 후 다시 시도해 주세요.';
+  if (status === 404) return '모델 이름을 찾을 수 없습니다.';
+  if (status === 429) return '사용량 한도를 넘었습니다.';
+  if (status === 503) return '제미나이 서버가 바쁩니다(503).';
+  if (status === 0) return '응답이 없습니다(시간 초과).';
   return `제미나이 오류 (${status}): ${message}`;
 };
 
-const callGemini = async (key: string, model: string, body: unknown) => {
+// 💡 오류 종류: kind = 'retry'(잠시 후 다시) / 'next'(다른 모델로) / 'stop'(키 문제 등 → 바로 멈춤)
+class GeminiError extends Error {
+  constructor(message: string, public status: number, public kind: 'retry' | 'next' | 'stop') {
+    super(message);
+  }
+}
+
+const callOnce = async (key: string, model: string, body: unknown) => {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(endpoint(model), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify(body),
+      signal: ctrl.signal,
     });
   } catch {
-    throw new Error('인터넷 연결을 확인해 주세요. (제미나이 서버에 연결할 수 없음)');
+    // 시간 초과 또는 연결 실패 → 같은 모델을 또 기다리지 않고 다음 모델로
+    throw new GeminiError(ctrl.signal.aborted ? explainError(0, '') : '제미나이 서버에 연결할 수 없습니다.', 0, 'next');
+  } finally {
+    clearTimeout(timer);
   }
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(explainError(res.status, json?.error?.message || res.statusText));
+  if (!res.ok) {
+    const st = res.status;
+    const msg = explainError(st, json?.error?.message || res.statusText);
+    const kind = st === 503 || st === 500 || st === 502 || st === 504 || st === 429 ? 'retry' : st === 404 ? 'next' : 'stop';
+    throw new GeminiError(msg, st, kind);
+  }
   const text: string = (json?.candidates?.[0]?.content?.parts || []).map((p: { text?: string }) => p.text || '').join('');
-  if (!text) throw new Error('제미나이가 빈 응답을 보냈습니다. 다시 시도해 주세요.');
+  if (!text) throw new GeminiError('제미나이가 빈 응답을 보냈습니다.', 200, 'retry');
   return text;
 };
 
-// 💡 [연결 확인] 버튼: 키와 모델이 작동하는지 짧게 확인
-export const testGemini = async (key: string, model: string): Promise<void> => {
-  await callGemini(key, model, { contents: [{ parts: [{ text: 'Reply with OK.' }] }] });
+// 진행 상황 알림 (화면에 "AI가 읽는 중 · 3.8-flash · 2번째 시도" 표시용)
+export type GeminiProgress = { model: string; attempt: number; waiting?: number };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 💡 재시도 + 예비 모델로 호출
+ * - 설정에서 고른 모델부터 시도하고, 계속 실패하면 다음 모델로 넘어감
+ * - 서버가 바쁨(503)·한도(429) 등은 2초 → 5초 쉬었다가 같은 모델로 다시 시도
+ * - trail: 시도 기록 (예: ['3.8-flash: 제미나이 서버가 바쁩니다(503).'])
+ */
+const callGemini = async (key: string, firstModel: string, body: unknown, onProgress?: (p: GeminiProgress) => void) => {
+  const chain = [firstModel, ...GEMINI_MODELS.map((m) => m.id).filter((m) => m !== firstModel)];
+  const trail: string[] = [];
+  for (const model of chain) {
+    for (let attempt = 1; attempt <= RETRY_WAITS.length + 1; attempt++) {
+      onProgress?.({ model, attempt });
+      try {
+        const text = await callOnce(key, model, body);
+        return { text, model, trail };
+      } catch (e) {
+        const err = e instanceof GeminiError ? e : new GeminiError(String(e), 0, 'next');
+        if (err.kind === 'stop') throw new Error(err.message); // 키·권한 문제는 다른 모델로도 안 됨
+        if (err.kind === 'retry' && attempt <= RETRY_WAITS.length) {
+          const wait = RETRY_WAITS[attempt - 1];
+          onProgress?.({ model, attempt, waiting: wait / 1000 });
+          await sleep(wait);
+          continue;
+        }
+        trail.push(`${shortModel(model)}: ${err.message}`);
+        break; // 다음 모델로
+      }
+    }
+  }
+  throw new Error(`제미나이 서버가 바빠서 모든 모델이 응답하지 않았어요. 잠시 후 [재인식]을 눌러 주세요. (${trail.join(' / ')})`);
+};
+
+// 💡 [연결 확인] 버튼: 어느 모델이 지금 응답하는지 확인 (실패한 모델 기록도 함께 돌려줌)
+export const testGemini = async (key: string, model: string, onProgress?: (p: GeminiProgress) => void) => {
+  const r = await callGemini(key, model, { contents: [{ parts: [{ text: 'Reply with OK.' }] }] }, onProgress);
+  return { model: r.model, trail: r.trail };
 };
 
 // 사진을 적당한 크기의 JPEG로 줄여서 base64로 변환 (전송량·비용 절약)
@@ -124,18 +193,24 @@ export type AiTicket = {
   tr: string;
   rows: number[][];      // A~E 줄 순서 그대로의 번호 (덜 읽힌 줄은 6개보다 적을 수 있음)
   warnings: string[];    // 확인이 필요한 부분 (예: B게임 번호가 5개)
+  model?: string;        // 💡 실제로 읽은 모델
 };
 
 // 💡 사진 1장을 제미나이로 읽기 (결과는 반드시 확인 화면에서 사람이 확인 후 등록)
-export const readTicketWithGemini = async (file: File): Promise<AiTicket> => {
+export const readTicketWithGemini = async (file: File, onProgress?: (p: GeminiProgress) => void): Promise<AiTicket> => {
   const key = getGeminiKey();
   if (!key) throw new Error('설정에서 제미나이 API 키를 먼저 입력해 주세요.');
   const data = await fileToJpegBase64(file);
 
-  const text = await callGemini(key, getGeminiModel(), {
-    contents: [{ parts: [{ text: PROMPT }, { inlineData: { mimeType: 'image/jpeg', data } }] }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0 },
-  });
+  const { text, model } = await callGemini(
+    key,
+    getGeminiModel(),
+    {
+      contents: [{ parts: [{ text: PROMPT }, { inlineData: { mimeType: 'image/jpeg', data } }] }],
+      generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0 },
+    },
+    onProgress
+  );
 
   let parsed: { round?: number; tr?: string; games?: { label?: string; numbers?: number[] }[] };
   try {
@@ -158,5 +233,5 @@ export const readTicketWithGemini = async (file: File): Promise<AiTicket> => {
   });
   if (rows.every((r) => r.length === 0)) warnings.push('번호를 읽지 못했습니다.');
 
-  return { round, tr: (parsed.tr || '').replace(/\D/g, ''), rows, warnings };
+  return { round, tr: (parsed.tr || '').replace(/\D/g, ''), rows, warnings, model };
 };

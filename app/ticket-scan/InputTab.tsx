@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Camera, Images, PenLine, X, CheckCircle2, AlertTriangle, XCircle, Loader2, Sparkles, RotateCw, Trash2 } from 'lucide-react';
 import { useTicketStore, LottoGame, Ticket } from '../store/useTicketStore';
 import { readTicketFromFile } from '../lib/lottoQr';
-import { readTicketWithGemini, getGeminiKey, AiTicket } from '../lib/geminiReader';
+import { readTicketWithGemini, getGeminiKey, AiTicket, shortModel, GeminiProgress } from '../lib/geminiReader';
 import { getLatestDrawNo } from '../store/useRoundStore';
 import { getBallColor, pad2 } from '../lib/endDigitPattern';
 
@@ -60,6 +60,21 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
   const [results, setResults] = useState<ResultItem[]>([]);
   const [notice, setNotice] = useState('');
   const [retrying, setRetrying] = useState<string[]>([]); // 💡 재인식 중인 사진
+  // 💡 지금 하는 일 표시 (QR 찾는 중 / AI가 읽는 중 · 모델 · 몇 번째 시도) + 걸린 시간
+  const [stage, setStage] = useState('');
+  const [stageStart, setStageStart] = useState(0);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!stage) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [stage]);
+  const aiStage = (p: GeminiProgress) =>
+    setStage(
+      p.waiting
+        ? `${shortModel(p.model)} 서버가 바빠요 · ${p.waiting}초 뒤 다시 시도`
+        : `AI가 읽는 중 · ${shortModel(p.model)}${p.attempt > 1 ? ` · ${p.attempt}번째 시도` : ''}`
+    );
 
   // 직접 입력 팝업
   const [isManualOpen, setIsManualOpen] = useState(false);
@@ -85,6 +100,8 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
   // 💡 사진 1장 판독: QR 먼저 → 없으면 제미나이 AI → 그래도 안 되면 실패
   const readOne = async (file: File, key: string, label: string, previewUrl?: string): Promise<ResultItem> => {
     let parsed = null;
+    setStage('QR 찾는 중');
+    setStageStart(Date.now());
     try {
       parsed = await readTicketFromFile(file);
     } catch (e) {
@@ -94,7 +111,8 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     if (!parsed && getGeminiKey()) {
       // QR이 없으면 제미나이 AI로 읽기 → 확인 화면에서 확인 후 등록
       try {
-        const ai = await readTicketWithGemini(file);
+        setStageStart(Date.now());
+        const ai = await readTicketWithGemini(file, aiStage);
         // 💡 이미 등록된 복권이면 확인 화면 없이 '중복'으로 표시
         if (findRegistered(ai.round, ai.tr, ai.rows)) {
           return {
@@ -111,7 +129,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
           key,
           label,
           status: 'review',
-          title: `${label}: AI로 읽음${ai.round ? ` · ${ai.round}회` : ''}`,
+          title: `${label}: AI로 읽음${ai.round ? ` · ${ai.round}회` : ''}${ai.model ? ` · ${shortModel(ai.model)}` : ''}`,
           detail: ai.warnings.length > 0 ? `확인 필요: ${ai.warnings.join(' ')}` : '번호가 맞는지 확인한 뒤 등록해 주세요.',
           previewUrl: previewUrl || URL.createObjectURL(file),
           ai,
@@ -174,6 +192,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     }
 
     setIsProcessing(false);
+    setStage('');
     if (cameraInputRef.current) cameraInputRef.current.value = '';
     if (galleryInputRef.current) galleryInputRef.current.value = '';
 
@@ -207,6 +226,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
     const next = await readOne(item.file, item.key, item.label || '사진', item.previewUrl);
     setResults((prev) => prev.map((r) => (r.key === item.key ? next : r)));
     setRetrying((prev) => prev.filter((k) => k !== item.key));
+    setStage('');
     if (openReview && next.status === 'review') openManual(next.previewUrl, next.key, next.ai);
     return next;
   };
@@ -475,7 +495,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
           <div className="flex justify-between items-center text-xs font-bold text-gray-700 dark:text-zinc-300 mb-2">
             <span className="flex items-center gap-1.5">
               {isProcessing && <Loader2 size={14} className="animate-spin text-amber-500" />}
-              {isProcessing ? '판독 중…' : '판독 완료'}
+              {isProcessing ? `${stage || '판독 중'}… ${stage ? `${Math.floor((Date.now() - stageStart) / 1000)}초` : ''}` : '판독 완료'}
             </span>
             <span className="text-amber-500">{progress.done} / {progress.total}</span>
           </div>
@@ -556,7 +576,7 @@ export default function InputTab({ onGoToList }: { onGoToList: () => void }) {
                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500 text-white text-[11px] font-bold disabled:opacity-60"
                     >
                       {retrying.includes(r.key) ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
-                      {retrying.includes(r.key) ? '읽는 중…' : '재인식'}
+                      {retrying.includes(r.key) ? `${stage || '읽는 중'}…` : '재인식'}
                     </button>
                   )}
                   <button onClick={() => cameraInputRef.current?.click()} className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 text-[11px] font-bold text-gray-700 dark:text-zinc-300">
