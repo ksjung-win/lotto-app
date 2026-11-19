@@ -512,7 +512,7 @@ export function Step5View({ combos, step3 }: { combos: Combo[]; step3: number[] 
   return (
     <div className="flex flex-col gap-3">
       <SummaryBox>
-        4단계에서 많이 갇힌 번호일수록 점수를 높게 매겨, <span className="text-orange-500">점수 높은 순서로 6개 조합 {combos.length}세트</span>를 만들었어요.
+        6단계에서 많이 갇힌 번호일수록 점수를 높게 매겨, <span className="text-orange-500">점수 높은 순서로 6개 조합 {combos.length}세트</span>를 만들었어요.
       </SummaryBox>
       <Legend items={[['bg-white ring-[3px] ring-orange-500', '3단계 갇힌 번호']]} />
 

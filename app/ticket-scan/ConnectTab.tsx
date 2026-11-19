@@ -13,8 +13,11 @@ import Step7View from './ConnectStep7';
 import { wallRanking } from '../lib/connectPredict';
 import { useSnapshotStore } from '../store/useSnapshotStore';
 import { TicketsByDate, Step2View, Step3View, Step4View, Step5View } from './ConnectViews';
+import { TriangleView, SameNumberView } from './ConnectTriangle';
+import { findTriangleTickets, sameNumberRanking } from '../lib/trianglePattern';
 
-type View = 'menu' | 'tickets' | 'step1' | 'step2' | 'step3' | 'step4' | 'step5' | 'step6' | 'step7';
+// 💡 화면 이름(내부용)은 그대로 두고, 메뉴에 보이는 단계 숫자만 바뀜: tri=4단계, same=5단계, step4~7 = 6~9단계
+type View = 'menu' | 'tickets' | 'step1' | 'step2' | 'step3' | 'tri' | 'same' | 'step4' | 'step5' | 'step6' | 'step7';
 const MIN_OPTIONS = [3, 4, 5, 6]; // 구역을 막는 같은 끝수 번호(벽)의 최소 개수
 
 // 회차별 '마지막으로 확인한 시각' (새로 추가된 복권 표시용, 이 휴대폰에만 저장)
@@ -112,8 +115,11 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
   );
   // 💡 5단계: 추천 조합 20세트
   const combos = useMemo(() => recommendCombos(result, roundTickets).combos, [result, roundTickets]);
-  // 💡 6단계: 연결 번호 순위
+  // 💡 8단계: 연결 번호 순위
   const walls = useMemo(() => wallRanking(result), [result]);
+  // 💡 4단계: 삼각 패턴 / 5단계: 동일번호 (등록한 복권 그대로 계산, 1단계 직접 수정과는 관계없음)
+  const triTickets = useMemo(() => findTriangleTickets(roundTickets), [roundTickets]);
+  const sameRanks = useMemo(() => sameNumberRanking(triTickets), [triTickets]);
 
   const editCount =
     Object.values(appliedOff).reduce((sum, list) => sum + list.length, 0) +
@@ -165,10 +171,12 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
     { key: 'step1', label: '1단계: 연결 복권', desc: `같은 끝자리로 연결된 복권 · ${roundTickets.length}장 중 ${result.step1.length}장` },
     { key: 'step2', label: '2단계: 연결 번호', desc: `1단계에 갇혀 있던 번호가 다른 복권에서는 연결 번호가 된 복권 · ${result.step1.length}장 중 ${result.step2Tickets.length}장` },
     { key: 'step3', label: '3단계: 갇힌 번호', desc: `1단계의 연결 번호가 다른 복권에서 갇힌 번호 · ${result.step3.length}개` },
-    { key: 'step4', label: '4단계: 중복 순위', desc: top ? `가장 많이: ${pad2(top.number)}번 · ${top.count}장` : '갇힌 번호 없음' },
-    { key: 'step5', label: '5단계: 추천 번호', desc: combos.length > 0 ? `패턴 점수 순 6개 조합 · ${combos.length}세트` : '추천할 번호 부족' },
-    { key: 'step6', label: '6단계: 연결 번호 순위', desc: walls[0] ? `벽으로 가장 많이: ${pad2(walls[0].number)}번 · ${walls[0].count}장` : '연결 번호 없음' },
-    { key: 'step7', label: '7단계: 예측 · 당첨 대입', desc: '추첨 전에는 예측 번호, 추첨 후에는 당첨 번호 대입 분석' },
+    { key: 'tri', label: '4단계: 삼각 패턴', desc: `같은 번호 3개가 삼각형(<·>)인 복권 · ${roundTickets.length}장 중 ${triTickets.length}장` },
+    { key: 'same', label: '5단계: 동일번호', desc: sameRanks.length > 0 ? `삼각형 3줄 안에서 겹친 번호 ${sameRanks.length}개 · 가장 많이: ${pad2(sameRanks[0].number)}번 ${sameRanks[0].count}장` : '삼각형 3줄 안에 동일번호 없음' },
+    { key: 'step4', label: '6단계: 중복 순위', desc: top ? `가장 많이: ${pad2(top.number)}번 · ${top.count}장` : '갇힌 번호 없음' },
+    { key: 'step5', label: '7단계: 추천 번호', desc: combos.length > 0 ? `패턴 점수 순 6개 조합 · ${combos.length}세트` : '추천할 번호 부족' },
+    { key: 'step6', label: '8단계: 연결 번호 순위', desc: walls[0] ? `벽으로 가장 많이: ${pad2(walls[0].number)}번 · ${walls[0].count}장` : '연결 번호 없음' },
+    { key: 'step7', label: '9단계: 예측 · 당첨 대입', desc: '추첨 전에는 예측 번호, 추첨 후에는 당첨 번호 대입 분석' },
   ];
   const current = MENU.find((m) => m.key === view);
   const locked = selectedRound !== null && !!snapshots[selectedRound]; // 💡 기록이 확정된 회차
@@ -203,7 +211,7 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
       {report.ok ? (
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
           <ShieldCheck size={14} className="shrink-0" />
-          <span className="truncate">검증 완료 · 패턴 {report.patterns}개 · 2단계 {report.links}건 · 4단계 순위 일치</span>
+          <span className="truncate">검증 완료 · 패턴 {report.patterns}개 · 2단계 {report.links}건 · 6단계 순위 일치</span>
         </div>
       ) : (
         <button
@@ -287,6 +295,8 @@ export default function ConnectTab({ onGoToInput }: { onGoToInput: () => void })
           )}
           {view === 'step2' && <Step2View step2Tickets={result.step2Tickets} step1Count={result.step1.length} ticketNo={ticketNo} />}
           {view === 'step3' && <Step3View key={selectedRound} step3={result.step3} step4={result.step4} ticketNo={ticketNo} />}
+          {view === 'tri' && <TriangleView key={selectedRound} list={triTickets} total={roundTickets.length} ticketNo={ticketNo} />}
+          {view === 'same' && <SameNumberView key={selectedRound} ranks={sameRanks} triTickets={triTickets.length} ticketNo={ticketNo} />}
           {view === 'step4' && <Step4View step4={result.step4} ticketNo={ticketNo} />}
           {view === 'step5' && <Step5View combos={combos} step3={result.step3} />}
           {view === 'step6' && <Step6View key={selectedRound} walls={walls} ticketNo={ticketNo} />}

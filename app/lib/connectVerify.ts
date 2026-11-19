@@ -186,11 +186,11 @@ export const verifyConnect = (
   const rank = Array.from(count.entries())
     .map(([n, set]) => [n, set.size])
     .sort((a, b) => b[1] - a[1] || a[0] - b[0]);
-  if (rank.length !== result.step4.length) err(`4단계 불일치: 번호 수 ${rank.length}개 / 결과 ${result.step4.length}개`);
+  if (rank.length !== result.step4.length) err(`6단계 불일치: 번호 수 ${rank.length}개 / 결과 ${result.step4.length}개`);
   rank.forEach(([n, c], i) => {
     const r = result.step4[i];
     if (!r || r.number !== n || r.count !== c)
-      err(`4단계 불일치: ${i + 1}위 다시 계산 ${n}번 ${c}장 / 결과 ${r ? `${r.number}번 ${r.count}장` : '없음'}`);
+      err(`6단계 불일치: ${i + 1}위 다시 계산 ${n}번 ${c}장 / 결과 ${r ? `${r.number}번 ${r.count}장` : '없음'}`);
   });
 
   return { ok: errors.length === 0, patterns, links: expected.size, errors };

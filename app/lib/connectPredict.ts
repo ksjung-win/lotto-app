@@ -34,8 +34,8 @@ export const rankOf = (list: { number: number; count: number }[]) => {
 /* ═══════════════ 7단계: 예측 번호 (방식 A·B·C) ═══════════════ */
 export type MethodKey = 'A' | 'B' | 'C';
 export const METHODS: { key: MethodKey; label: string; desc: string }[] = [
-  { key: 'A', label: 'A. 갇힌 번호 중심', desc: '4단계 중복 순위가 높은 번호 (지금의 5단계 방식)' },
-  { key: 'B', label: 'B. 연결 번호 중심', desc: '6단계 연결 번호 순위가 높은 번호' },
+  { key: 'A', label: 'A. 갇힌 번호 중심', desc: '6단계 중복 순위가 높은 번호 (7단계 추천 방식)' },
+  { key: 'B', label: 'B. 연결 번호 중심', desc: '8단계 연결 번호 순위가 높은 번호' },
   { key: 'C', label: 'C. 혼합', desc: 'A와 B를 함께 반영' },
 ];
 

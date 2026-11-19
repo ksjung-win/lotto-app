@@ -372,13 +372,13 @@ export default function Step7View({ round, tickets, roundTickets, result, minLen
       </Card>
 
       {/* 4·6단계 순위 */}
-      <Card title="4단계 · 6단계: 당첨 번호의 순위">
+      <Card title="6단계 · 8단계: 당첨 번호의 순위">
         <table className="w-full text-[11.5px] text-center">
           <thead>
             <tr className="text-gray-500 dark:text-zinc-400">
               <th className="py-1 text-left font-bold">번호</th>
-              <th className="py-1 font-bold">4단계 (갇힌)</th>
-              <th className="py-1 font-bold">6단계 (연결)</th>
+              <th className="py-1 font-bold">6단계 (갇힌)</th>
+              <th className="py-1 font-bold">8단계 (연결)</th>
             </tr>
           </thead>
           <tbody className="text-gray-900 dark:text-zinc-100 font-bold">
